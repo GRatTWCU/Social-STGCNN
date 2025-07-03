@@ -1,4 +1,4 @@
-absl-py>=0.7.1,<2.0
+absl-py
 appdirs==1.4.3
 apturl==0.5.2
 asn1crypto==0.24.0
