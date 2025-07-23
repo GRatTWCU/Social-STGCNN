@@ -102,4 +102,8 @@ def bivariate_loss(V_pred, V_trgt):
     result = result / denom
     result = -torch.log(torch.clamp(result, min=epsilon))
     return torch.mean(result)
+
+def graph_loss(V_pred, V_trgt):
+    # V_predとV_trgtは既に (N, feature_dim) の形状にリシェイプされていると仮定
+    return bivariate_loss(V_pred, V_trgt)
    
