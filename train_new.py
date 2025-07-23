@@ -25,44 +25,49 @@ from model import *
 def graph_loss(V_pred, V_target):
     return bivariate_loss(V_pred, V_target)
 
-def calculate_ade_fde(V_pred, V_target, obs_traj, pred_traj_gt):
-    """
-    Calculate Average Displacement Error (ADE) and Final Displacement Error (FDE)
-    
-    Args:
-        V_pred: Predicted trajectories [batch, seq_len, num_nodes, 2]
-        V_target: Ground truth trajectories [batch, seq_len, num_nodes, 2]
-        obs_traj: Observed trajectories [batch, obs_len, num_nodes, 2] 
-        pred_traj_gt: Ground truth prediction trajectories [batch, pred_len, num_nodes, 2]
-    
-    Returns:
-        ade: Average Displacement Error
-        fde: Final Displacement Error
-    """
-    # Convert relative predictions to absolute coordinates
-    # V_pred contains relative displacements, need to convert to absolute positions
-    seq_len, num_nodes = V_pred.shape[1], V_pred.shape[2]
-    
-    # Get the last observed position for each pedestrian
-    last_obs_pos = obs_traj[:, -1:, :, :]  # [batch, 1, num_nodes, 2]
-    
-    # Convert relative predictions to absolute positions
-    pred_abs = torch.zeros_like(V_pred)
-    pred_abs[:, 0:1, :, :] = last_obs_pos + V_pred[:, 0:1, :, :]
-    
-    for t in range(1, seq_len):
-        pred_abs[:, t:t+1, :, :] = pred_abs[:, t-1:t, :, :] + V_pred[:, t:t+1, :, :]
-    
-    # Calculate displacement errors
-    displacement_errors = torch.sqrt(torch.sum((pred_abs - pred_traj_gt) ** 2, dim=3))  # [batch, seq_len, num_nodes]
-    
-    # ADE: Average over all time steps and pedestrians
-    ade = torch.mean(displacement_errors)
-    
-    # FDE: Error at the final time step, averaged over pedestrians
-    fde = torch.mean(displacement_errors[:, -1, :])
-    
-    return ade.item(), fde.item()
+def calculate_ade_fde(V_pred_original_shape, V_tr_original_shape, obs_traj, pred_traj_gt):
+    # V_pred_original_shape: (batch_size, pred_seq_len, num_pedestrians, 5)
+    # V_tr_original_shape: (batch_size, pred_seq_len, num_pedestrians, 2) (これはpred_traj_gtと同じ意味合い)
+    # obs_traj: (batch_size, obs_seq_len, num_pedestrians, 2)
+    # pred_traj_gt: (batch_size, pred_seq_len, num_pedestrians, 2)
+
+    # 予測された平均座標 (mu_x, mu_y) を抽出
+    V_pred_means = V_pred_original_shape[..., :2] # shape: (B, T_pred, N, 2)
+
+    # 観測シーケンスの最後の絶対位置を取得
+    last_obs_pos = obs_traj[:, -1, :, :] # shape: (B, N, 2)
+
+    all_pred_abs = []
+    all_target_abs = []
+    counts = []
+
+    # バッチ内の各サンプルをループ
+    for i in range(V_pred_means.shape[0]): # batch_size
+        batch_V_pred_means = V_pred_means[i] # (T_pred, N, 2)
+        batch_pred_traj_gt = pred_traj_gt[i] # (T_pred, N, 2)
+        batch_last_obs_pos = last_obs_pos[i] # (N, 2)
+
+        num_peds_in_batch = batch_V_pred_means.shape[1] # このサンプルでの歩行者数
+
+        # 相対予測を絶対予測に変換するためにnumpyに変換
+        batch_V_pred_means_np = batch_V_pred_means.cpu().numpy()
+        batch_last_obs_pos_np = batch_last_obs_pos.cpu().numpy()
+        batch_pred_traj_gt_np = batch_pred_traj_gt.cpu().numpy()
+
+        # nodes_rel_to_nodes_abs を呼び出して絶対座標を取得
+        # nodes_rel_to_nodes_abs は (seq_len, num_nodes, 2) を期待する
+        pred_abs_np = nodes_rel_to_nodes_abs(batch_V_pred_means_np, batch_last_obs_pos_np)
+
+        # ADE/FDE関数に渡すために結果をリストに追加
+        all_pred_abs.append(pred_abs_np)
+        all_target_abs.append(batch_pred_traj_gt_np)
+        counts.append(num_peds_in_batch)
+
+    # 全体のADEとFDEを計算
+    ade_val = ade(all_pred_abs, all_target_abs, counts)
+    fde_val = fde(all_pred_abs, all_target_abs, counts)
+
+    return ade_val, fde_val
 
 def train(epoch, model, loader_train, optimizer, args, device):
     model.train()
