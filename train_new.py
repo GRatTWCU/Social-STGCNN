@@ -1,7 +1,6 @@
 import os
 import math
 import sys
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import torch
 import torch.nn as nn
 import numpy as np
@@ -16,6 +15,7 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from numpy import linalg as LA
 import networkx as nx
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # utilsモジュールとmodelモジュールは外部からインポートされる想定
 # from utils import *
