@@ -102,11 +102,12 @@ def read_file(_path, delim='space'):
         for line in f:
             parts = line.strip().split(delim)
             if len(parts) == 4:
+                # それぞれをfloatに変換してリストにする
                 frame, pid, x, y = map(float, parts)
                 data.append([frame, pid, x, y])
             else:
-                print(f"Invalid line: {line.strip()}")
-    return np.asarray(data)
+                print(f"[警告] 無効な行をスキップ: {line.strip()}")
+    return np.array(data)
 
 
 class TrajectoryDataset(Dataset):
