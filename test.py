@@ -60,7 +60,7 @@ def test(KSTEPS=20):
         sy = torch.exp(V_pred[:,:,3]) #sy
         corr = torch.tanh(V_pred[:,:,4]) #corr
         
-        cov = torch.zeros(V_pred.shape[0],V_pred.shape[1],2,2).cuda()
+        cov = torch.zeros(V_pred.shape[0],V_pred.shape[1],2,2).to(device)
         cov[:,:,0,0]= sx*sx
         cov[:,:,0,1]= corr*sx*sy
         cov[:,:,1,0]= corr*sx*sy
