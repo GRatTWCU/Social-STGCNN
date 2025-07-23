@@ -25,7 +25,7 @@ def test(KSTEPS=20):
     for batch in loader_test: 
         step+=1
         #Get data
-        batch = [tensor.cuda() for tensor in batch]
+        batch = [tensor.to(device) for tensor in batch]
         obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,\
          loss_mask,V_obs,A_obs,V_tr,A_tr = batch
 
