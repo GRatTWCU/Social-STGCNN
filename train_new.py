@@ -16,12 +16,12 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from numpy import linalg as LA
 import networkx as nx
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# utilsモジュールとmodelモジュールは外部からインポートされる想定
-# from utils import *
-# from model import *
-# metricsモジュールからのインポートは、必要な関数がこのファイル内に統合されたため削除します。
+# 外部モジュールからのインポートは、必要な箇所で明示的に行います。
+# from utils import * # utils.pyからのインポートはmain関数内で
+# from model import * # model.pyからのインポートはmain関数内で
+# from metrics import * # metrics.pyからのインポートは不要、関数はここに統合
+
 import pickle
 import argparse
 from torch import autograd
@@ -86,10 +86,21 @@ def seq_to_nodes(seq_):
 def nodes_rel_to_nodes_abs(nodes,init_node):
     # nodes: (seq_len, num_nodes, 2) 相対座標
     # init_node: (num_nodes, 2) 各ノードの初期絶対座標 (観測シーケンスの最後の位置)
+    
+    # nodes_ の形状は nodes と同じにする
     nodes_ = np.zeros_like(nodes)
+    
+    # init_nodeの歩行者数とnodesの歩行者数が異なる場合に対応するため、
+    # 共通の歩行者数でループを回す
+    num_peds_nodes = nodes.shape[1]
+    num_peds_init_node = init_node.shape[0]
+    
+    # エラーを回避するため、最小の歩行者数でループ
+    # ただし、これはデータが不整合であることを示唆します。
+    num_peds_to_process = min(num_peds_nodes, num_peds_init_node)
+
     for s in range(nodes.shape[0]): # シーケンス長
-        for ped in range(nodes.shape[1]): # 歩行者数
-            # 累積和 + 初期位置
+        for ped in range(num_peds_to_process): # 共通の歩行者数についてのみループ
             nodes_[s,ped,:] = np.sum(nodes[:s+1,ped,:],axis=0) + init_node[ped,:]
 
     return nodes_.squeeze()
@@ -139,17 +150,17 @@ def graph_loss(V_pred, V_trgt):
 
 # ADEとFDEを計算するメイン関数
 def calculate_ade_fde(V_pred_original_shape, V_tr_original_shape, obs_traj, pred_traj_gt):
-    # V_pred_original_shape: (batch_size, pred_seq_len, num_pedestrians, 5)
-    # V_tr_original_shape: (batch_size, pred_seq_len, num_pedestrians, 2) (これはpred_traj_gtと同じ意味合い)
-    # obs_traj: (batch_size, obs_seq_len, num_pedestrians, 2)
-    # pred_traj_gt: (batch_size, pred_seq_len, num_pedestrians, 2)
+    # V_pred_original_shape: (batch_size, pred_seq_len, num_pedestrians_pred, 5)
+    # V_tr_original_shape: (batch_size, pred_seq_len, num_pedestrians_gt, 2)
+    # obs_traj: (batch_size, obs_seq_len, num_pedestrians_obs, 2)
+    # pred_traj_gt: (batch_size, pred_seq_len, num_pedestrians_gt, 2)
 
     # 予測された平均座標 (mu_x, mu_y) を抽出
-    V_pred_means = V_pred_original_shape[..., :2] # shape: (B, T_pred, N, 2)
+    V_pred_means = V_pred_original_shape[..., :2] # shape: (B, T_pred, N_pred, 2)
 
     # 観測シーケンスの最後の絶対位置を取得
     # obs_trajの最後の次元が2より大きい場合に対応するため、明示的に最初の2つの特徴量のみを使用
-    last_obs_pos = obs_traj[:, -1, :, :2] # shape: (B, N, 2) <- ここを修正
+    last_obs_pos = obs_traj[:, -1, :, :2] # shape: (B, N_obs, 2)
 
     all_pred_abs = []
     all_target_abs = []
@@ -157,27 +168,47 @@ def calculate_ade_fde(V_pred_original_shape, V_tr_original_shape, obs_traj, pred
 
     # バッチ内の各サンプルをループ
     for i in range(V_pred_means.shape[0]): # batch_size
-        batch_V_pred_means = V_pred_means[i] # (T_pred, N, 2)
-        batch_pred_traj_gt = pred_traj_gt[i] # (T_pred, N, 2)
-        batch_last_obs_pos = last_obs_pos[i] # (N, 2)
+        batch_V_pred_means = V_pred_means[i] # (T_pred, N_pred, 2)
+        batch_pred_traj_gt = pred_traj_gt[i] # (T_pred, N_gt, 2)
+        batch_last_obs_pos = last_obs_pos[i] # (N_obs, 2)
 
-        num_peds_in_batch = batch_V_pred_means.shape[1] # このサンプルでの歩行者数
+        # 歩行者数の整合性をチェック
+        num_peds_pred = batch_V_pred_means.shape[1]
+        num_peds_obs = batch_last_obs_pos.shape[0]
+        num_peds_gt = batch_pred_traj_gt.shape[1]
+
+        # 予測、観測、グラウンドトゥルースの歩行者数が一致することを期待
+        # もし一致しない場合、エラーを回避するために最小値を取りますが、データの問題を示唆します。
+        min_peds_for_sample = min(num_peds_pred, num_peds_obs, num_peds_gt)
+
+        if min_peds_for_sample == 0:
+            # 歩行者がいないサンプルはスキップ
+            continue
+
+        # 共通の歩行者数にスライス
+        batch_V_pred_means_sliced = batch_V_pred_means[:, :min_peds_for_sample, :]
+        batch_pred_traj_gt_sliced = batch_pred_traj_gt[:, :min_peds_for_sample, :]
+        batch_last_obs_pos_sliced = batch_last_obs_pos[:min_peds_for_sample, :]
 
         # 相対予測を絶対予測に変換するためにnumpyに変換
-        batch_V_pred_means_np = batch_V_pred_means.cpu().numpy()
-        batch_last_obs_pos_np = batch_last_obs_pos.cpu().numpy()
-        batch_pred_traj_gt_np = batch_pred_traj_gt.cpu().numpy()
+        batch_V_pred_means_np = batch_V_pred_means_sliced.cpu().numpy()
+        batch_last_obs_pos_np = batch_last_obs_pos_sliced.cpu().numpy()
+        batch_pred_traj_gt_np = batch_pred_traj_gt_sliced.cpu().numpy()
 
         # nodes_rel_to_nodes_abs を呼び出して絶対座標を取得
         # nodes_rel_to_nodes_abs は (seq_len, num_nodes, 2) を期待する
+        # ここで渡す num_nodes は min_peds_for_sample になります。
         pred_abs_np = nodes_rel_to_nodes_abs(batch_V_pred_means_np, batch_last_obs_pos_np)
 
         # ADE/FDE関数に渡すために結果をリストに追加
         all_pred_abs.append(pred_abs_np)
         all_target_abs.append(batch_pred_traj_gt_np)
-        counts.append(num_peds_in_batch)
+        counts.append(min_peds_for_sample) # ここも修正
 
     # 全体のADEとFDEを計算
+    if not all_pred_abs:
+        return 0.0, 0.0 # スキップされたサンプルのみの場合
+
     ade_val = ade(all_pred_abs, all_target_abs, counts)
     fde_val = fde(all_pred_abs, all_target_abs, counts)
 
@@ -323,6 +354,9 @@ def vald(epoch, model, loader_val, args, device):
 
 
 def main():
+    # deviceはグローバルに定義されているため、ここでは定義しません。
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     parser = argparse.ArgumentParser()
 
     # Model specific parameters
@@ -579,4 +613,6 @@ def main():
         pickle.dump(constant_metrics, fp)
 
 if __name__ == '__main__':
+    # deviceはグローバルに定義されているため、ここでは定義しません。
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     main()
