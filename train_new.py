@@ -1,6 +1,7 @@
 import os
 import math
 import sys
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -147,7 +148,8 @@ def calculate_ade_fde(V_pred_original_shape, V_tr_original_shape, obs_traj, pred
     V_pred_means = V_pred_original_shape[..., :2] # shape: (B, T_pred, N, 2)
 
     # 観測シーケンスの最後の絶対位置を取得
-    last_obs_pos = obs_traj[:, -1, :, :] # shape: (B, N, 2)
+    # obs_trajの最後の次元が2より大きい場合に対応するため、明示的に最初の2つの特徴量のみを使用
+    last_obs_pos = obs_traj[:, -1, :, :2] # shape: (B, N, 2) <- ここを修正
 
     all_pred_abs = []
     all_target_abs = []
