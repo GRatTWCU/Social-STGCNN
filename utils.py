@@ -78,7 +78,21 @@ def poly_fit(traj, traj_len, threshold):
         return 1.0
     else:
         return 0.0
-def read_file(_path, delim='\t'):
+#def read_file(_path, delim='\t'):
+    #data = []
+    #if delim == 'tab':
+        #delim = '\t'
+    #elif delim == 'space':
+        #delim = ' '
+    #with open(_path, 'r') as f:
+        #for line in f:
+            #line = line.strip().split(delim)
+            #line = [float(i) for i in line]
+            #data.append(line)
+    #return np.asarray(data)
+
+
+def read_file(_path, delim='space'):
     data = []
     if delim == 'tab':
         delim = '\t'
