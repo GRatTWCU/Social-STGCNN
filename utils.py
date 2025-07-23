@@ -92,24 +92,14 @@ def poly_fit(traj, traj_len, threshold):
     #return np.asarray(data)
 
 
-def read_file(_path, delim='space'):
+def read_file(_path):
     data = []
-    if delim == 'tab':
-        delim_char = '\t'
-    elif delim == 'space':
-        delim_char = ' '
-    else:
-        delim_char = delim
-
     with open(_path, 'r') as f:
         for line in f:
-            parts = line.strip().split(delim_char)
-            frame = int(parts[0])
-            person_id = int(parts[1])
-            x = float(parts[2])
-            y = float(parts[3])
-            data.append([frame, person_id, x, y])
-    return np.array(data)
+            line = line.strip().split()  # スペースまたはタブで自動分割
+            line = [float(i) for i in line]
+            data.append(line)
+    return np.asarray(data)
 
 
 class TrajectoryDataset(Dataset):
