@@ -17,15 +17,18 @@ from torch.utils.data import DataLoader
 from numpy import linalg as LA
 import networkx as nx
 
-# 外部モジュールからのインポートは、必要な箇所で明示的に行います。
-# from utils import * # utils.pyからのインポートはmain関数内で
-# from model import * # model.pyからのインポートはmain関数内で
-# from metrics import * # metrics.pyからのインポートは不要、関数はここに統合
-
+# 外部モジュールからのインポート
 import pickle
 import argparse
 from torch import autograd
 import torch.optim.lr_scheduler as lr_scheduler
+
+# TrajectoryDatasetとsocial_stgcnnをファイルの先頭でインポート
+from utils import TrajectoryDataset
+from model import social_stgcnn
+
+# deviceはグローバルに定義
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ADE (Average Displacement Error) の計算
 def ade(predAll,targetAll,count_):
@@ -114,6 +117,41 @@ def closer_to_zero(current,new_v):
         return True
     else:
         return False
+
+# Bivariate Gaussian NLL損失の計算
+def bivariate_loss(V_pred, V_trgt):
+    # print文はデバッグ用なので、本番コードでは削除またはコメントアウトしても良い
+    # print(f"bivariate_loss input V_pred.shape={V_pred.shape}, V_trgt.shape={V_trgt.shape}")
+
+    # train/vald関数で既に適切なリシェイプが行われているため、
+    # ここではV_predとV_trgtが (N, feature_dim) の形状で来ると仮定します。
+    # したがって、以前のpermuteロジックは不要です。
+
+    # V_pred と V_trgt が (N, feature_dim) の形状で来ると仮定
+    # そのため、[:, :, 0] のようなインデックスは不要になり、[:, 0] となります。
+    normx = V_trgt[:, 0] - V_pred[:, 0]
+    normy = V_trgt[:, 1] - V_pred[:, 1]
+
+    sx = torch.exp(V_pred[:, 2])
+    sy = torch.exp(V_pred[:, 3])
+    corr = torch.tanh(V_pred[:, 4])
+
+    sxsy = sx * sy
+    z = (normx / sx)**2 + (normy / sy)**2 - 2 * (corr * normx * normy / sxsy)
+    negRho = 1 - corr**2
+
+    result = torch.exp(-z / (2 * negRho))
+    denom = 2 * np.pi * (sxsy * torch.sqrt(negRho))
+    epsilon = 1e-20 # ゼロ除算やlog(0)を防ぐための小さな値
+
+    result = result / denom
+    result = -torch.log(torch.clamp(result, min=epsilon)) # log(0)を避けるためにclamp
+    return torch.mean(result)
+
+# graph_loss関数: bivariate_lossを呼び出すラッパー
+def graph_loss(V_pred, V_trgt):
+    # V_predとV_trgtは既に (N, feature_dim) の形状にリシェイプされていると仮定
+    return bivariate_loss(V_pred, V_trgt)
 
 # ADEとFDEを計算するメイン関数
 def calculate_ade_fde(V_pred_original_shape, V_tr_original_shape, obs_traj, pred_traj_gt):
@@ -445,8 +483,8 @@ def main():
         # TrajectoryDatasetは外部ファイル (utils.py) からインポートされる想定
         # social_stgcnnは外部ファイル (model.py) からインポートされる想定
         # これらのインポートが正しく行われていることを確認してください。
-        from utils import TrajectoryDataset
-        from model import social_stgcnn
+        # from utils import TrajectoryDataset # 既にファイルの先頭でインポート済み
+        # from model import social_stgcnn # 既にファイルの先頭でインポート済み
 
         dset_train = TrajectoryDataset(
                 train_path,
