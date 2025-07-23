@@ -19,11 +19,6 @@ import networkx as nx
 from tqdm import tqdm
 import time
 
-# scipy.errstate互換性のための修正
-import scipy as sp
-if not hasattr(sp, 'errstate'):
-    sp.errstate = np.errstate
-
 
 def anorm(p1,p2): 
     NORM = math.sqrt((p1[0]-p2[0])**2+ (p1[1]-p2[1])**2)
@@ -51,11 +46,7 @@ def seq_to_graph(seq_,seq_rel,norm_lap_matr = True):
                 A[s,h,k] = l2_norm
                 A[s,k,h] = l2_norm
         if norm_lap_matr: 
-            # NetworkX互換性の修正
-            if hasattr(nx, 'from_numpy_array'):
-                G = nx.from_numpy_array(A[s,:,:])
-            else:
-                G = nx.from_numpy_matrix(A[s,:,:])
+            G = nx.from_numpy_matrix(A[s,:,:])
             A[s,:,:] = nx.normalized_laplacian_matrix(G).toarray()
             
     return torch.from_numpy(V).type(torch.float),\
@@ -78,25 +69,15 @@ def poly_fit(traj, traj_len, threshold):
         return 1.0
     else:
         return 0.0
-#def read_file(_path, delim='\t'):
-    #data = []
-    #if delim == 'tab':
-        #delim = '\t'
-    #elif delim == 'space':
-        #delim = ' '
-    #with open(_path, 'r') as f:
-        #for line in f:
-            #line = line.strip().split(delim)
-            #line = [float(i) for i in line]
-            #data.append(line)
-    #return np.asarray(data)
-
-
-def read_file(_path):
+def read_file(_path, delim='\t'):
     data = []
+    if delim == 'tab':
+        delim = '\t'
+    elif delim == 'space':
+        delim = ' '
     with open(_path, 'r') as f:
         for line in f:
-            line = line.strip().split()  # スペースまたはタブで自動分割
+            line = line.strip().split(delim)
             line = [float(i) for i in line]
             data.append(line)
     return np.asarray(data)
@@ -138,7 +119,7 @@ class TrajectoryDataset(Dataset):
         loss_mask_list = []
         non_linear_ped = []
         for path in all_files:
-            data = read_file(path)
+            data = read_file(path, delim)
             frames = np.unique(data[:, 0]).tolist()
             frame_data = []
             for frame in frames:
