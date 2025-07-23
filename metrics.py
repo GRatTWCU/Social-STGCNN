@@ -82,6 +82,7 @@ def closer_to_zero(current,new_v):
         return False
         
 def bivariate_loss(V_pred,V_trgt):
+    V_trgt = V_trgt[:, :, :2]
     #mux, muy, sx, sy, corr
     #assert V_pred.shape == V_trgt.shape
     normx = V_trgt[:,:,0]- V_pred[:,:,0]
