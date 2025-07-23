@@ -82,19 +82,14 @@ def closer_to_zero(current,new_v):
         return False
         
 def bivariate_loss(V_pred, V_trgt):
-    print(f"V_pred.shape={V_pred.shape}, V_trgt.shape={V_trgt.shape}")
+    # print文はデバッグ用なので、本番コードでは削除またはコメントアウトしても良い
+    print(f"bivariate_loss input V_pred.shape={V_pred.shape}, V_trgt.shape={V_trgt.shape}")
+    normx = V_trgt[:, 0] - V_pred[:, 0]
+    normy = V_trgt[:, 1] - V_pred[:, 1]
 
-    if V_trgt.shape[-1] != 2:
-        # 多くは (B, 2, N) なので (B, N, 2) に変換
-        V_trgt = V_trgt.permute(0, 2, 1)
-
-    # 以下は元のまま
-    normx = V_trgt[:, :, 0] - V_pred[:, :, 0]
-    normy = V_trgt[:, :, 1] - V_pred[:, :, 1]
-
-    sx = torch.exp(V_pred[:, :, 2])
-    sy = torch.exp(V_pred[:, :, 3])
-    corr = torch.tanh(V_pred[:, :, 4])
+    sx = torch.exp(V_pred[:, 2])
+    sy = torch.exp(V_pred[:, 3])
+    corr = torch.tanh(V_pred[:, 4])
 
     sxsy = sx * sy
     z = (normx / sx)**2 + (normy / sy)**2 - 2 * (corr * normx * normy / sxsy)

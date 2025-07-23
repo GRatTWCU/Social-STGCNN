@@ -66,17 +66,17 @@ def calculate_ade_fde(V_pred, V_target, obs_traj, pred_traj_gt):
 
 def train(epoch, model, loader_train, optimizer, args, device):
     model.train()
-    loss_batch = 0 
+    loss_batch = 0
     batch_count = 0
     is_fst_loss = True
     loader_len = len(loader_train)
     turn_point = int(loader_len/args.batch_size)*args.batch_size + loader_len%args.batch_size - 1
-    
+
     total_ade = 0
     total_fde = 0
     metric_batch_count = 0
 
-    for cnt, batch in enumerate(loader_train): 
+    for cnt, batch in enumerate(loader_train):
         batch_count += 1
 
         # Get data
@@ -85,18 +85,30 @@ def train(epoch, model, loader_train, optimizer, args, device):
          loss_mask, V_obs, A_obs, V_tr, A_tr = batch
 
         optimizer.zero_grad()
-        
+
         # Forward
         # V_obs = batch,seq,node,feat
         # V_obs_tmp = batch,feat,seq,node
         V_obs_tmp = V_obs.permute(0, 3, 1, 2)
 
         V_pred, _ = model(V_obs_tmp, A_obs.squeeze())
-        
+
+        # V_predの形状は (batch_size, 5, pred_seq_len, num_pedestrians) から
+        # (batch_size, pred_seq_len, num_pedestrians, 5) になる
         V_pred = V_pred.permute(0, 2, 3, 1)
 
+        # ここでV_predとV_trをbivariate_lossが期待する形状にリシェイプ
+        # V_pred.shape: (batch_size, pred_seq_len, num_pedestrians, 5)
+        # V_tr.shape: (batch_size, pred_seq_len, num_pedestrians, 2)
+        
+        # graph_lossに渡す前にフラット化
+        # -1は自動的に計算される次元のサイズ
+        V_pred_reshaped = V_pred.contiguous().view(-1, V_pred.shape[-1])
+        V_tr_reshaped = V_tr.contiguous().view(-1, V_tr.shape[-1])
+
+        # リシェイプされたテンソルをgraph_lossに渡す
         if batch_count % args.batch_size != 0 and cnt != turn_point:
-            l = graph_loss(V_pred, V_tr)
+            l = graph_loss(V_pred_reshaped, V_tr_reshaped) # ここを修正
             if is_fst_loss:
                 loss = l
                 is_fst_loss = False
@@ -106,57 +118,66 @@ def train(epoch, model, loader_train, optimizer, args, device):
             loss = loss / args.batch_size
             is_fst_loss = True
             loss.backward()
-            
+
             if args.clip_grad is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
 
             optimizer.step()
-            
-            # Calculate metrics
+
+            # Calculate metrics (metrics関数は元の4次元テンソルを期待する可能性があるので、リシェイプ前のものを渡す)
             with torch.no_grad():
+                # calculate_ade_fdeにはリシェイプ前のV_predとV_trを渡す
                 ade, fde = calculate_ade_fde(V_pred, V_tr, obs_traj, pred_traj_gt)
                 total_ade += ade
                 total_fde += fde
                 metric_batch_count += 1
-            
+
             loss_batch += loss.item()
-            print('TRAIN:', '\t Epoch:', epoch, '\t Loss:', loss_batch/batch_count, 
+            print('TRAIN:', '\t Epoch:', epoch, '\t Loss:', loss_batch/batch_count,
                   '\t ADE:', total_ade/metric_batch_count, '\t FDE:', total_fde/metric_batch_count)
-            
+
     avg_ade = total_ade / metric_batch_count if metric_batch_count > 0 else 0
     avg_fde = total_fde / metric_batch_count if metric_batch_count > 0 else 0
-    
+
     return loss_batch/batch_count, avg_ade, avg_fde
 
 def vald(epoch, model, loader_val, args, device):
     model.eval()
-    loss_batch = 0 
+    loss_batch = 0
     batch_count = 0
     is_fst_loss = True
     loader_len = len(loader_val)
     turn_point = int(loader_len/args.batch_size)*args.batch_size + loader_len%args.batch_size - 1
-    
+
     total_ade = 0
     total_fde = 0
     metric_batch_count = 0
-    
+
     with torch.no_grad():
-        for cnt, batch in enumerate(loader_val): 
+        for cnt, batch in enumerate(loader_val):
             batch_count += 1
 
             # Get data
             batch = [tensor.to(device) for tensor in batch]
             obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,\
              loss_mask, V_obs, A_obs, V_tr, A_tr = batch
-            
+
             V_obs_tmp = V_obs.permute(0, 3, 1, 2)
 
             V_pred, _ = model(V_obs_tmp, A_obs.squeeze())
-            
+
             V_pred = V_pred.permute(0, 2, 3, 1)
 
+            # ここでV_predとV_trをbivariate_lossが期待する形状にリシェイプ
+            # V_pred.shape: (batch_size, pred_seq_len, num_pedestrians, 5)
+            # V_tr.shape: (batch_size, pred_seq_len, num_pedestrians, 2)
+
+            # graph_lossに渡す前にフラット化
+            V_pred_reshaped = V_pred.contiguous().view(-1, V_pred.shape[-1])
+            V_tr_reshaped = V_tr.contiguous().view(-1, V_tr.shape[-1])
+
             if batch_count % args.batch_size != 0 and cnt != turn_point:
-                l = graph_loss(V_pred, V_tr)
+                l = graph_loss(V_pred_reshaped, V_tr_reshaped) # ここを修正
                 if is_fst_loss:
                     loss = l
                     is_fst_loss = False
@@ -165,21 +186,23 @@ def vald(epoch, model, loader_val, args, device):
             else:
                 loss = loss / args.batch_size
                 is_fst_loss = True
-                
-                # Calculate metrics
+
+                # Calculate metrics (metrics関数は元の4次元テンソルを期待する可能性があるので、リシェイプ前のものを渡す)
+                # calculate_ade_fdeにはリシェイプ前のV_predとV_trを渡す
                 ade, fde = calculate_ade_fde(V_pred, V_tr, obs_traj, pred_traj_gt)
                 total_ade += ade
                 total_fde += fde
                 metric_batch_count += 1
-                
+
                 loss_batch += loss.item()
                 print('VALD:', '\t Epoch:', epoch, '\t Loss:', loss_batch/batch_count,
                       '\t ADE:', total_ade/metric_batch_count, '\t FDE:', total_fde/metric_batch_count)
 
     avg_ade = total_ade / metric_batch_count if metric_batch_count > 0 else 0
     avg_fde = total_fde / metric_batch_count if metric_batch_count > 0 else 0
-    
+
     return loss_batch/batch_count, avg_ade, avg_fde
+
 
 def main():
     parser = argparse.ArgumentParser()
