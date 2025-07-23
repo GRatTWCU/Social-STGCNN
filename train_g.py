@@ -27,8 +27,6 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.patches import Rectangle
 import seaborn as sns
-from matplotlib.colors import ListedColormap
-import random
 
 # グラフ設定
 plt.style.use('seaborn-v0_8')
@@ -37,204 +35,6 @@ sns.set_palette("husl")
 def graph_loss(V_pred,V_target):
     return bivariate_loss(V_pred,V_target)
 
-class TrajectoryVisualizer:
-    def __init__(self, save_dir):
-        self.save_dir = save_dir
-        self.trajectory_dir = os.path.join(save_dir, 'trajectories')
-        if not os.path.exists(self.trajectory_dir):
-            os.makedirs(self.trajectory_dir)
-    
-    def plot_trajectories(self, obs_traj, pred_traj_gt, pred_traj_pred, epoch, batch_idx, num_samples=5):
-        """
-        軌跡の可視化
-        obs_traj: 観測軌跡 [batch, seq_len, num_peds, 2]
-        pred_traj_gt: 正解予測軌跡 [batch, seq_len, num_peds, 2]
-        pred_traj_pred: 予測軌跡 [batch, seq_len, num_peds, 2]
-        """
-        batch_size = obs_traj.shape[0]
-        num_peds = obs_traj.shape[2]
-        
-        # サンプル数を調整
-        num_samples = min(num_samples, batch_size)
-        sample_indices = random.sample(range(batch_size), num_samples)
-        
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle(f'Trajectory Predictions - Epoch {epoch}, Batch {batch_idx}', fontsize=16)
-        
-        colors = plt.cm.Set3(np.linspace(0, 1, max(num_peds, 10)))
-        
-        for plot_idx, batch_idx in enumerate(sample_indices[:6]):  # 最大6個のサンプル
-            row = plot_idx // 3
-            col = plot_idx % 3
-            
-            if row >= 2:
-                break
-                
-            ax = axes[row, col]
-            
-            # 各歩行者の軌跡をプロット
-            for ped_idx in range(num_peds):
-                color = colors[ped_idx % len(colors)]
-                
-                # 観測軌跡
-                obs_x = obs_traj[batch_idx, :, ped_idx, 0].cpu().numpy()
-                obs_y = obs_traj[batch_idx, :, ped_idx, 1].cpu().numpy()
-                
-                # 正解予測軌跡
-                gt_x = pred_traj_gt[batch_idx, :, ped_idx, 0].cpu().numpy()
-                gt_y = pred_traj_gt[batch_idx, :, ped_idx, 1].cpu().numpy()
-                
-                # 予測軌跡
-                pred_x = pred_traj_pred[batch_idx, :, ped_idx, 0].detach().cpu().numpy()
-                pred_y = pred_traj_pred[batch_idx, :, ped_idx, 0].detach().cpu().numpy()
-                
-                # プロット
-                ax.plot(obs_x, obs_y, 'o-', color=color, linewidth=2, markersize=4, 
-                       label=f'Ped {ped_idx} Observed' if ped_idx < 5 else None)
-                ax.plot(gt_x, gt_y, 's-', color=color, linewidth=2, markersize=4, alpha=0.7,
-                       label=f'Ped {ped_idx} Ground Truth' if ped_idx < 5 else None)
-                ax.plot(pred_x, pred_y, '^--', color=color, linewidth=2, markersize=4, alpha=0.7,
-                       label=f'Ped {ped_idx} Predicted' if ped_idx < 5 else None)
-                
-                # 開始点と終了点をマーク
-                ax.plot(obs_x[0], obs_y[0], 'o', color=color, markersize=8, markeredgecolor='black')
-                ax.plot(gt_x[-1], gt_y[-1], 's', color=color, markersize=8, markeredgecolor='black')
-                ax.plot(pred_x[-1], pred_y[-1], '^', color=color, markersize=8, markeredgecolor='black')
-            
-            ax.set_title(f'Sample {batch_idx + 1}')
-            ax.set_xlabel('X Position')
-            ax.set_ylabel('Y Position')
-            ax.grid(True, alpha=0.3)
-            ax.axis('equal')
-            
-            if plot_idx == 0:  # 最初のサブプロットにのみ凡例を表示
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        # 未使用のサブプロットを非表示
-        for i in range(len(sample_indices), 6):
-            row = i // 3
-            col = i % 3
-            if row < 2:
-                axes[row, col].set_visible(False)
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.trajectory_dir, f'trajectories_epoch_{epoch}_batch_{batch_idx}.png'),
-                   dpi=150, bbox_inches='tight')
-        plt.close()
-    
-    def plot_error_analysis(self, obs_traj, pred_traj_gt, pred_traj_pred, epoch, batch_idx):
-        """
-        エラー分析の可視化
-        """
-        batch_size = obs_traj.shape[0]
-        num_peds = obs_traj.shape[2]
-        pred_len = pred_traj_gt.shape[1]
-        
-        # 誤差計算
-        errors = np.sqrt(np.sum((pred_traj_gt.detach().cpu().numpy() - pred_traj_pred.detach().cpu().numpy())**2, axis=3))
-        
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle(f'Error Analysis - Epoch {epoch}, Batch {batch_idx}', fontsize=16)
-        
-        # 時系列エラー
-        mean_error_per_timestep = np.mean(errors, axis=(0, 2))
-        std_error_per_timestep = np.std(errors, axis=(0, 2))
-        
-        axes[0, 0].plot(range(pred_len), mean_error_per_timestep, 'r-', linewidth=2)
-        axes[0, 0].fill_between(range(pred_len), 
-                               mean_error_per_timestep - std_error_per_timestep,
-                               mean_error_per_timestep + std_error_per_timestep, 
-                               alpha=0.3)
-        axes[0, 0].set_title('Mean Prediction Error over Time')
-        axes[0, 0].set_xlabel('Time Step')
-        axes[0, 0].set_ylabel('Euclidean Error')
-        axes[0, 0].grid(True, alpha=0.3)
-        
-        # エラー分布
-        all_errors = errors.flatten()
-        axes[0, 1].hist(all_errors, bins=50, alpha=0.7, color='skyblue', edgecolor='black')
-        axes[0, 1].set_title('Error Distribution')
-        axes[0, 1].set_xlabel('Euclidean Error')
-        axes[0, 1].set_ylabel('Frequency')
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # 歩行者別エラー
-        mean_error_per_ped = np.mean(errors, axis=(0, 1))
-        axes[1, 0].bar(range(num_peds), mean_error_per_ped, alpha=0.7, color='lightgreen')
-        axes[1, 0].set_title('Mean Error per Pedestrian')
-        axes[1, 0].set_xlabel('Pedestrian ID')
-        axes[1, 0].set_ylabel('Mean Euclidean Error')
-        axes[1, 0].grid(True, alpha=0.3)
-        
-        # 最終時点でのエラー
-        final_errors = errors[:, -1, :]
-        axes[1, 1].boxplot([final_errors[:, i] for i in range(num_peds)], 
-                          labels=[f'Ped {i}' for i in range(num_peds)])
-        axes[1, 1].set_title('Final Time Step Error Distribution')
-        axes[1, 1].set_xlabel('Pedestrian ID')
-        axes[1, 1].set_ylabel('Euclidean Error')
-        axes[1, 1].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.trajectory_dir, f'error_analysis_epoch_{epoch}_batch_{batch_idx}.png'),
-                   dpi=150, bbox_inches='tight')
-        plt.close()
-    
-    def plot_trajectory_heatmap(self, obs_traj, pred_traj_gt, pred_traj_pred, epoch, batch_idx):
-        """
-        軌跡のヒートマップ可視化
-        """
-        batch_size = obs_traj.shape[0]
-        
-        # 最初のバッチのみ使用
-        sample_obs = obs_traj[0].cpu().numpy()  # [seq_len, num_peds, 2]
-        sample_gt = pred_traj_gt[0].cpu().numpy()
-        sample_pred = pred_traj_pred[0].cpu().numpy()
-        
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-        fig.suptitle(f'Trajectory Heatmap - Epoch {epoch}, Batch {batch_idx}', fontsize=16)
-        
-        # 全体の範囲を計算
-        all_x = np.concatenate([sample_obs[:, :, 0].flatten(), 
-                               sample_gt[:, :, 0].flatten(), 
-                               sample_pred[:, :, 0].flatten()])
-        all_y = np.concatenate([sample_obs[:, :, 1].flatten(), 
-                               sample_gt[:, :, 1].flatten(), 
-                               sample_pred[:, :, 1].flatten()])
-        
-        x_min, x_max = all_x.min() - 1, all_x.max() + 1
-        y_min, y_max = all_y.min() - 1, all_y.max() + 1
-        
-        # 観測軌跡
-        axes[0].scatter(sample_obs[:, :, 0], sample_obs[:, :, 1], 
-                       c=range(len(sample_obs)), cmap='viridis', s=50, alpha=0.7)
-        axes[0].set_title('Observed Trajectories')
-        axes[0].set_xlim(x_min, x_max)
-        axes[0].set_ylim(y_min, y_max)
-        
-        # 正解軌跡
-        axes[1].scatter(sample_gt[:, :, 0], sample_gt[:, :, 1], 
-                       c=range(len(sample_gt)), cmap='plasma', s=50, alpha=0.7)
-        axes[1].set_title('Ground Truth Trajectories')
-        axes[1].set_xlim(x_min, x_max)
-        axes[1].set_ylim(y_min, y_max)
-        
-        # 予測軌跡
-        axes[2].scatter(sample_pred[:, :, 0], sample_pred[:, :, 1], 
-                       c=range(len(sample_pred)), cmap='coolwarm', s=50, alpha=0.7)
-        axes[2].set_title('Predicted Trajectories')
-        axes[2].set_xlim(x_min, x_max)
-        axes[2].set_ylim(y_min, y_max)
-        
-        for ax in axes:
-            ax.set_xlabel('X Position')
-            ax.set_ylabel('Y Position')
-            ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.trajectory_dir, f'heatmap_epoch_{epoch}_batch_{batch_idx}.png'),
-                   dpi=150, bbox_inches='tight')
-        plt.close()
 class TrainingVisualizer:
     def __init__(self, save_dir):
         self.save_dir = save_dir
@@ -329,7 +129,7 @@ class TrainingVisualizer:
                    dpi=300, bbox_inches='tight')
         plt.show()
 
-def train(epoch, model, loader_train, optimizer, args, device, trajectory_visualizer=None):
+def train(epoch, model, loader_train, optimizer, args, device):
     model.train()
     loss_batch = 0 
     batch_count = 0
@@ -359,26 +159,6 @@ def train(epoch, model, loader_train, optimizer, args, device, trajectory_visual
         A_tr = A_tr.squeeze()
         V_pred = V_pred.squeeze()
 
-        # 軌跡の可視化（特定のエポック・バッチで実行）
-        if (trajectory_visualizer is not None and 
-            epoch % args.plot_trajectory_every == 0 and 
-            cnt % args.plot_trajectory_batch == 0):
-            
-            # V_pred を軌跡形式に変換
-            pred_traj_pred = V_pred.unsqueeze(0) if V_pred.dim() == 3 else V_pred
-            
-            trajectory_visualizer.plot_trajectories(
-                obs_traj, pred_traj_gt, pred_traj_pred, epoch, cnt
-            )
-            
-            trajectory_visualizer.plot_error_analysis(
-                obs_traj, pred_traj_gt, pred_traj_pred, epoch, cnt
-            )
-            
-            trajectory_visualizer.plot_trajectory_heatmap(
-                obs_traj, pred_traj_gt, pred_traj_pred, epoch, cnt
-            )
-
         if batch_count%args.batch_size !=0 and cnt != turn_point :
             l = graph_loss(V_pred,V_tr)
             if is_fst_loss :
@@ -402,7 +182,7 @@ def train(epoch, model, loader_train, optimizer, args, device, trajectory_visual
             
     return loss_batch/batch_count
 
-def vald(epoch, model, loader_val, args, device, trajectory_visualizer=None):
+def vald(epoch, model, loader_val, args, device):
     model.eval()
     loss_batch = 0 
     batch_count = 0
@@ -427,17 +207,6 @@ def vald(epoch, model, loader_val, args, device, trajectory_visualizer=None):
         V_tr = V_tr.squeeze()
         A_tr = A_tr.squeeze()
         V_pred = V_pred.squeeze()
-
-        # 検証時の軌跡可視化
-        if (trajectory_visualizer is not None and 
-            epoch % args.plot_trajectory_every == 0 and 
-            cnt % args.plot_trajectory_batch == 0):
-            
-            pred_traj_pred = V_pred.unsqueeze(0) if V_pred.dim() == 3 else V_pred
-            
-            trajectory_visualizer.plot_trajectories(
-                obs_traj, pred_traj_gt, pred_traj_pred, epoch, cnt, num_samples=3
-            )
 
         if batch_count%args.batch_size !=0 and cnt != turn_point :
             l = graph_loss(V_pred,V_tr)
@@ -493,12 +262,6 @@ def main():
                         help='Plot every N epochs')
     parser.add_argument('--save_plots', action="store_true", default=True,
                         help='Save training plots')
-    parser.add_argument('--plot_trajectory_every', type=int, default=10,
-                        help='Plot trajectories every N epochs')
-    parser.add_argument('--plot_trajectory_batch', type=int, default=50,
-                        help='Plot trajectories every N batches')
-    parser.add_argument('--plot_trajectories', action="store_true", default=True,
-                        help='Enable trajectory plotting')
                         
     args = parser.parse_args()
 
@@ -563,15 +326,9 @@ def main():
     print('Checkpoint dir:', checkpoint_dir)
 
     # 可視化器の初期化
-    visualizer = None
-    trajectory_visualizer = None
-    
     if args.save_plots:
         visualizer = TrainingVisualizer(plots_dir)
         plt.ion()  # インタラクティブモードをオン
-        
-    if args.plot_trajectories:
-        trajectory_visualizer = TrajectoryVisualizer(plots_dir)
 
     #Training 
     metrics = {'train_loss':[],  'val_loss':[]}
@@ -579,8 +336,8 @@ def main():
 
     print('Training started ...')
     for epoch in range(args.num_epochs):
-        train_loss = train(epoch, model, loader_train, optimizer, args, device, trajectory_visualizer)
-        val_loss = vald(epoch, model, loader_val, args, device, trajectory_visualizer)
+        train_loss = train(epoch, model, loader_train, optimizer, args, device)
+        val_loss = vald(epoch, model, loader_val, args, device)
         
         metrics['train_loss'].append(train_loss)
         metrics['val_loss'].append(val_loss)
@@ -606,7 +363,7 @@ def main():
         print('*'*30)
         
         # 可視化の更新
-        if args.save_plots and visualizer is not None and epoch % args.plot_every == 0:
+        if args.save_plots and epoch % args.plot_every == 0:
             visualizer.update_plots(epoch, train_loss, val_loss, current_lr, metrics)
         
         with open(checkpoint_dir+'metrics.pkl', 'wb') as fp:
@@ -616,7 +373,7 @@ def main():
             pickle.dump(constant_metrics, fp)
 
     # 最終的なプロットの保存
-    if args.save_plots and visualizer is not None:
+    if args.save_plots:
         visualizer.save_final_plot()
         plt.ioff()  # インタラクティブモードをオフ
 

@@ -22,112 +22,8 @@ from torch import autograd
 import torch.optim.lr_scheduler as lr_scheduler
 from model import *
 
-# 可視化のためのインポート
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.patches import Rectangle
-import seaborn as sns
-
-# グラフ設定
-plt.style.use('seaborn-v0_8')
-sns.set_palette("husl")
-
 def graph_loss(V_pred,V_target):
     return bivariate_loss(V_pred,V_target)
-
-class TrainingVisualizer:
-    def __init__(self, save_dir):
-        self.save_dir = save_dir
-        self.fig, self.axes = plt.subplots(2, 2, figsize=(15, 10))
-        self.fig.suptitle('Training Progress Visualization', fontsize=16)
-        
-        # 損失プロット用の軸
-        self.loss_ax = self.axes[0, 0]
-        self.lr_ax = self.axes[0, 1]
-        self.metrics_ax = self.axes[1, 0]
-        self.stats_ax = self.axes[1, 1]
-        
-        # データ保存用リスト
-        self.train_losses = []
-        self.val_losses = []
-        self.epochs = []
-        self.learning_rates = []
-        
-    def update_plots(self, epoch, train_loss, val_loss, lr=None, metrics=None):
-        self.epochs.append(epoch)
-        self.train_losses.append(train_loss)
-        self.val_losses.append(val_loss)
-        
-        if lr is not None:
-            self.learning_rates.append(lr)
-        
-        # 損失プロットの更新
-        self.loss_ax.clear()
-        self.loss_ax.plot(self.epochs, self.train_losses, 'b-', label='Training Loss', linewidth=2)
-        self.loss_ax.plot(self.epochs, self.val_losses, 'r-', label='Validation Loss', linewidth=2)
-        self.loss_ax.set_xlabel('Epoch')
-        self.loss_ax.set_ylabel('Loss')
-        self.loss_ax.set_title('Training and Validation Loss')
-        self.loss_ax.legend()
-        self.loss_ax.grid(True, alpha=0.3)
-        
-        # 学習率プロット
-        if self.learning_rates:
-            self.lr_ax.clear()
-            self.lr_ax.plot(self.epochs, self.learning_rates, 'g-', linewidth=2)
-            self.lr_ax.set_xlabel('Epoch')
-            self.lr_ax.set_ylabel('Learning Rate')
-            self.lr_ax.set_title('Learning Rate Schedule')
-            self.lr_ax.grid(True, alpha=0.3)
-        
-        # メトリクス表示
-        self.metrics_ax.clear()
-        if len(self.train_losses) > 1:
-            # 最近の10エポックでの改善を表示
-            recent_epochs = min(10, len(self.train_losses))
-            recent_train = self.train_losses[-recent_epochs:]
-            recent_val = self.val_losses[-recent_epochs:]
-            recent_ep = self.epochs[-recent_epochs:]
-            
-            self.metrics_ax.plot(recent_ep, recent_train, 'b-', label='Train', linewidth=2)
-            self.metrics_ax.plot(recent_ep, recent_val, 'r-', label='Val', linewidth=2)
-            self.metrics_ax.set_title('Recent 10 Epochs')
-            self.metrics_ax.legend()
-            self.metrics_ax.grid(True, alpha=0.3)
-        
-        # 統計情報表示
-        self.stats_ax.clear()
-        self.stats_ax.axis('off')
-        
-        if self.train_losses:
-            min_train_loss = min(self.train_losses)
-            min_val_loss = min(self.val_losses)
-            min_val_epoch = self.epochs[self.val_losses.index(min_val_loss)]
-            
-            stats_text = f"""
-            Current Epoch: {epoch}
-            Current Train Loss: {train_loss:.6f}
-            Current Val Loss: {val_loss:.6f}
-            
-            Best Val Loss: {min_val_loss:.6f}
-            Best Val Epoch: {min_val_epoch}
-            
-            Min Train Loss: {min_train_loss:.6f}
-            """
-            
-            self.stats_ax.text(0.1, 0.9, stats_text, transform=self.stats_ax.transAxes, 
-                             fontsize=12, verticalalignment='top', fontfamily='monospace')
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.save_dir, f'training_progress_epoch_{epoch}.png'), 
-                   dpi=100, bbox_inches='tight')
-        plt.draw()
-        plt.pause(0.1)
-    
-    def save_final_plot(self):
-        plt.savefig(os.path.join(self.save_dir, 'final_training_progress.png'), 
-                   dpi=300, bbox_inches='tight')
-        plt.show()
 
 def train(epoch, model, loader_train, optimizer, args, device):
     model.train()
@@ -256,12 +152,6 @@ def main():
                         help='Use lr rate scheduler')
     parser.add_argument('--tag', default='tag',
                         help='personal tag for the model ')
-    
-    # 可視化関連のパラメータ
-    parser.add_argument('--plot_every', type=int, default=1,
-                        help='Plot every N epochs')
-    parser.add_argument('--save_plots', action="store_true", default=True,
-                        help='Save training plots')
                         
     args = parser.parse_args()
 
@@ -296,7 +186,7 @@ def main():
             dset_val,
             batch_size=1, #This is irrelative to the args batch size parameter
             shuffle =False,
-            num_workers=0)
+            num_workers=0)  # Changed from 1 to 0 to avoid multiprocessing issues
 
     #Defining the model 
     model = social_stgcnn(n_stgcnn =args.n_stgcnn,n_txpcnn=args.n_txpcnn,
@@ -313,22 +203,12 @@ def main():
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    
-    # 可視化用のディレクトリ作成
-    plots_dir = os.path.join(checkpoint_dir, 'plots')
-    if not os.path.exists(plots_dir):
-        os.makedirs(plots_dir)
         
     with open(checkpoint_dir+'args.pkl', 'wb') as fp:
         pickle.dump(args, fp)
 
     print('Data and model loaded')
     print('Checkpoint dir:', checkpoint_dir)
-
-    # 可視化器の初期化
-    if args.save_plots:
-        visualizer = TrainingVisualizer(plots_dir)
-        plt.ion()  # インタラクティブモードをオン
 
     #Training 
     metrics = {'train_loss':[],  'val_loss':[]}
@@ -341,9 +221,6 @@ def main():
         
         metrics['train_loss'].append(train_loss)
         metrics['val_loss'].append(val_loss)
-        
-        # 学習率の取得
-        current_lr = optimizer.param_groups[0]['lr']
         
         if args.use_lrschd:
             scheduler.step()
@@ -362,23 +239,11 @@ def main():
         print(constant_metrics)
         print('*'*30)
         
-        # 可視化の更新
-        if args.save_plots and epoch % args.plot_every == 0:
-            visualizer.update_plots(epoch, train_loss, val_loss, current_lr, metrics)
-        
         with open(checkpoint_dir+'metrics.pkl', 'wb') as fp:
             pickle.dump(metrics, fp)
         
         with open(checkpoint_dir+'constant_metrics.pkl', 'wb') as fp:
             pickle.dump(constant_metrics, fp)
-
-    # 最終的なプロットの保存
-    if args.save_plots:
-        visualizer.save_final_plot()
-        plt.ioff()  # インタラクティブモードをオフ
-
-    print('Training completed!')
-    print(f'Best validation loss: {constant_metrics["min_val_loss"]:.6f} at epoch {constant_metrics["min_val_epoch"]}')
 
 if __name__ == '__main__':
     # マルチプロセシング対応
