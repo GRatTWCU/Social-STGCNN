@@ -2,6 +2,7 @@ import os
 import math
 import sys
 import torch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import numpy as np
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -181,7 +182,7 @@ for feta in range(len(paths)):
         #Defining the model 
         model = social_stgcnn(n_stgcnn =args.n_stgcnn,n_txpcnn=args.n_txpcnn,
         output_feat=args.output_size,seq_len=args.obs_seq_len,
-        kernel_size=args.kernel_size,pred_seq_len=args.pred_seq_len).cuda()
+        kernel_size=args.kernel_size,pred_seq_len=args.pred_seq_len).to(device)
         model.load_state_dict(torch.load(model_path))
 
 
