@@ -94,10 +94,6 @@ def train(epoch, model, loader_train, optimizer, args, device):
         V_pred, _ = model(V_obs_tmp, A_obs.squeeze())
         
         V_pred = V_pred.permute(0, 2, 3, 1)
-        
-        V_tr = V_tr.squeeze()
-        A_tr = A_tr.squeeze()
-        V_pred = V_pred.squeeze()
 
         if batch_count % args.batch_size != 0 and cnt != turn_point:
             l = graph_loss(V_pred, V_tr)
@@ -158,10 +154,6 @@ def vald(epoch, model, loader_val, args, device):
             V_pred, _ = model(V_obs_tmp, A_obs.squeeze())
             
             V_pred = V_pred.permute(0, 2, 3, 1)
-            
-            V_tr = V_tr.squeeze()
-            A_tr = A_tr.squeeze()
-            V_pred = V_pred.squeeze()
 
             if batch_count % args.batch_size != 0 and cnt != turn_point:
                 l = graph_loss(V_pred, V_tr)
