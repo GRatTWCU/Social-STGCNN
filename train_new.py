@@ -238,28 +238,37 @@ def main():
     # nuScenes setup if requested
     if args.nuscenes_setup or args.dataset == 'nuscenes_mini':
         print("Setting up nuScenes_mini data...")
-        from complete_nuscenes_setup import setup_directories, convert_nuscenes_raw_to_eth, convert_processed_data_to_eth, create_dummy_data, verify_data_format
-        
-        # Setup directories
-        setup_directories()
-        
-        # Convert data based on mode
-        success = False
-        output_path = './datasets/nuscenes_mini/'
-        
-        if args.nuscenes_mode == 'raw':
-            success = convert_nuscenes_raw_to_eth(args.nuscenes_input_path, output_path)
-        elif args.nuscenes_mode == 'processed':
-            success = convert_processed_data_to_eth(args.nuscenes_input_path, output_path)
-        elif args.nuscenes_mode == 'dummy':
-            create_dummy_data()
-            success = True
-        
-        if success:
-            verify_data_format(output_path)
-            print("nuScenes_mini setup completed successfully!")
-        else:
-            print("nuScenes_mini setup failed. Exiting...")
+        try:
+            from complete_nuscenes_setup import setup_directories, convert_nuscenes_raw_to_eth, convert_processed_data_to_eth, create_dummy_data, verify_data_format
+            
+            # Setup directories
+            setup_directories()
+            
+            # Convert data based on mode
+            success = False
+            output_path = './datasets/nuscenes_mini/'
+            
+            if args.nuscenes_mode == 'raw':
+                success = convert_nuscenes_raw_to_eth(args.nuscenes_input_path, output_path)
+            elif args.nuscenes_mode == 'processed':
+                success = convert_processed_data_to_eth(args.nuscenes_input_path, output_path)
+            elif args.nuscenes_mode == 'dummy':
+                create_dummy_data()
+                success = True
+            
+            if success:
+                verify_data_format(output_path)
+                print("nuScenes_mini setup completed successfully!")
+            else:
+                print("nuScenes_mini setup failed. Exiting...")
+                return
+                
+        except ImportError as e:
+            print(f"Error importing nuScenes setup module: {e}")
+            print("Please make sure complete_nuscenes_setup.py is in the same directory.")
+            return
+        except Exception as e:
+            print(f"Error during nuScenes setup: {e}")
             return
 
     # Data prep     
