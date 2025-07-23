@@ -83,10 +83,12 @@ def closer_to_zero(current,new_v):
         
 def bivariate_loss(V_pred, V_trgt):
     # V_pred: (B, N, 5)
-    # V_trgt: (B, N, 2)
+    # V_trgt: (B, N, 2) expected
 
-    # 安全に2次元に制限（エラー回避）
-    V_trgt = V_trgt[:, :, :2]
+    # 形状が合っていない場合の修正
+    if V_trgt.shape[-1] != 2:
+        # 推測: V_trgt.shape == (B, 2, N)
+        V_trgt = V_trgt.permute(0, 2, 1)  # → (B, N, 2)
 
     normx = V_trgt[:, :, 0] - V_pred[:, :, 0]
     normy = V_trgt[:, :, 1] - V_pred[:, :, 1]
@@ -96,8 +98,8 @@ def bivariate_loss(V_pred, V_trgt):
     corr = torch.tanh(V_pred[:, :, 4])  # corr
 
     sxsy = sx * sy
-    z = (normx / sx) ** 2 + (normy / sy) ** 2 - 2 * (corr * normx * normy / sxsy)
-    negRho = 1 - corr ** 2
+    z = (normx / sx)**2 + (normy / sy)**2 - 2 * (corr * normx * normy / sxsy)
+    negRho = 1 - corr**2
 
     result = torch.exp(-z / (2 * negRho))
     denom = 2 * np.pi * (sxsy * torch.sqrt(negRho))
