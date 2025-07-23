@@ -94,13 +94,9 @@ def poly_fit(traj, traj_len, threshold):
 
 def read_file(_path, delim='space'):
     data = []
-    if delim == 'tab':
-        delim = '\t'
-    elif delim == 'space':
-        delim = ' '
     with open(_path, 'r') as f:
         for line in f:
-            line = line.strip().split(delim)
+            line = line.strip().split()  # ← ここを修正！
             line = [float(i) for i in line]
             data.append(line)
     return np.asarray(data)
