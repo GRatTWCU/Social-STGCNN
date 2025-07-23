@@ -92,21 +92,18 @@ def poly_fit(traj, traj_len, threshold):
     #return np.asarray(data)
 
 
-def read_file(_path, delim='space'):
+def read_file(_path):
     data = []
-    if delim == 'tab':
-        delim = '\t'
-    elif delim == 'space':
-        delim = ' '
     with open(_path, 'r') as f:
         for line in f:
-            parts = line.strip().split(delim)
-            if len(parts) == 4:
-                # それぞれをfloatに変換してリストにする
-                frame, pid, x, y = map(float, parts)
-                data.append([frame, pid, x, y])
-            else:
-                print(f"[警告] 無効な行をスキップ: {line.strip()}")
+            parts = line.strip().split()
+            # partsは ['0', '0', '0.231314', '-5.791897'] のようなリスト
+            # それぞれ適切にfloatやintに変換
+            frame = int(parts[0])
+            person_id = int(parts[1])
+            x = float(parts[2])
+            y = float(parts[3])
+            data.append([frame, person_id, x, y])
     return np.array(data)
 
 
