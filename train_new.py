@@ -42,11 +42,16 @@ def ade(predAll,targetAll,count_):
         target = np.swapaxes(targetAll[s][:,:count_[s],:],0,1)
 
         N = pred.shape[0] # 歩行者数
-        T = pred.shape[1] # シーケンス長 (pred_seq_len)
+        # predとtargetのシーケンス長が異なる場合に備え、最小値を使用
+        T = min(pred.shape[1], target.shape[1]) # <-- ここを修正
+
+        # 歩行者数またはシーケンス長が0の場合はスキップ
+        if N == 0 or T == 0:
+            continue
+
         sum_ = 0
         for i in range(N): # 各歩行者について
             for t in range(T): # 各タイムステップについて
-                # ここでtがTの範囲内であることを確認
                 sum_+=math.sqrt((pred[i,t,0] - target[i,t,0])**2+(pred[i,t,1] - target[i,t,1])**2)
         sum_all += sum_/(N*T) # 各サンプルでの平均ADE
 
@@ -63,12 +68,22 @@ def fde(predAll,targetAll,count_):
         pred = np.swapaxes(predAll[s][:,:count_[s],:],0,1)
         target = np.swapaxes(targetAll[s][:,:count_[s],:],0,1)
         N = pred.shape[0] # 歩行者数
-        T = pred.shape[1] # シーケンス長 (pred_seq_len)
+
+        # predとtargetのシーケンス長が異なる場合に備え、最小値を使用
+        T_pred = pred.shape[1]
+        T_target = target.shape[1]
+
+        # 歩行者数またはシーケンス長が0の場合はスキップ
+        if N == 0 or T_pred == 0 or T_target == 0:
+            continue
+
+        # 最終タイムステップのインデックスは、最小のシーケンス長から1を引いたもの
+        final_t_idx = min(T_pred, T_target) - 1 # <-- ここを修正
+
         sum_ = 0
         for i in range(N): # 各歩行者について
             # 最終タイムステップについてのみ
-            # T-1 が有効なインデックスであることを確認
-            sum_+=math.sqrt((pred[i,T-1,0] - target[i,T-1,0])**2+(pred[i,T-1,1] - target[i,T-1,1])**2)
+            sum_+=math.sqrt((pred[i,final_t_idx,0] - target[i,final_t_idx,0])**2+(pred[i,final_t_idx,1] - target[i,final_t_idx,1])**2)
         sum_all += sum_/(N) # 各サンプルでの平均FDE
 
     return sum_all/All # 全サンプルでの平均FDE
@@ -359,9 +374,6 @@ def vald(epoch, model, loader_val, args, device):
 
 
 def main():
-    # deviceはグローバルに定義されているため、ここでは定義しません。
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     parser = argparse.ArgumentParser()
 
     # Model specific parameters
