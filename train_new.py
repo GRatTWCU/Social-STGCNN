@@ -1,7 +1,7 @@
 import os
 import math
 import sys
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import torch
 import torch.nn as nn
 import numpy as np
