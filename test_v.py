@@ -17,8 +17,10 @@ import copy
 # 変更: visualize.pyから描画関数をインポートします
 from visualize import show_predictions
 
-def test(args, KSTEPS=20):
-    global loader_test, model
+# 変更: model と loader_test を引数として受け取るようにします
+def test(model, loader_test, args, KSTEPS=20):
+    # 削除: global宣言は不要になります
+    # global loader_test, model
     # デバッグメッセージ: test関数が開始されたことを示します
     print("--- test function started ---")
     model.eval()
@@ -197,7 +199,8 @@ def main(args):
             ade_ =999999
             fde_ =999999
             print("Testing ....")
-            ad,fd,raw_data_dic_= test(args, KSTEPS=KSTEPS)
+            # 変更: modelとloader_testを引数として渡します
+            ad,fd,raw_data_dic_= test(model, loader_test, args, KSTEPS=KSTEPS)
             ade_= min(ade_,ad)
             fde_ =min(fde_,fd)
             ade_ls.append(ade_)
