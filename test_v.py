@@ -10,18 +10,22 @@ import pickle
 import argparse
 import glob
 import torch.distributions.multivariate_normal as torchdist
+import shutil
+try:
+    # Google Colab環境でのみインポートし、ダウンロードに使用します
+    from google.colab import files
+    IS_COLAB = True
+except ImportError:
+    IS_COLAB = False
+
 from utils import *
 from metrics import *
 from model import social_stgcnn
 import copy
-# 変更: visualize.pyから描画関数をインポートします
-from visualize import show_predictions
+# visualize.pyから2つの関数をインポートします
+from visualize import show_predictions, create_gif
 
-# 変更: model と loader_test を引数として受け取るようにします
 def test(model, loader_test, args, KSTEPS=20):
-    # 削除: global宣言は不要になります
-    # global loader_test, model
-    # デバッグメッセージ: test関数が開始されたことを示します
     print("--- test function started ---")
     model.eval()
     ade_bigls = []
@@ -39,7 +43,8 @@ def test(model, loader_test, args, KSTEPS=20):
 
         #Forward
         V_obs_tmp =V_obs.permute(0,3,1,2)
-        V_pred,_ = model(V_obs_tmp,A_obs.squeeze())
+        with torch.no_grad():
+            V_pred,_ = model(V_obs_tmp,A_obs.squeeze())
         V_pred = V_pred.permute(0,2,3,1)
 
         V_tr = V_tr.squeeze()
@@ -97,18 +102,7 @@ def test(model, loader_test, args, KSTEPS=20):
             ade_bigls.append(min(ade_ls[n]))
             fde_bigls.append(min(fde_ls[n]))
 
-        # --- デバッグメッセージ: 可視化フラグの状態を確認します ---
-        print(f"--- [Scene {step}] Checking visualization flag: {args.visualize}")
-        
         if args.visualize:
-            # --- デバッグメッセージ: 可視化処理を開始することを示します ---
-            print(f"--- [Scene {step}] Starting visualization process...")
-            
-            obs_traj_to_plot = raw_data_dict[step]['obs']
-            gt_traj_to_plot = raw_data_dict[step]['trgt']
-            all_pred_trajs_to_plot = raw_data_dict[step]['pred']
-            
-            # 保存先フォルダを準備します
             model_name = os.path.basename(os.path.dirname(args.model_path))
             save_dir = os.path.join("visualizations_output", model_name)
             if not os.path.exists(save_dir):
@@ -116,10 +110,13 @@ def test(model, loader_test, args, KSTEPS=20):
 
             save_file_path = os.path.join(save_dir, f"scene_{step:04d}.png")
             
-            # visualize.pyの関数を呼び出して描画します
-            show_predictions(obs_traj_to_plot, gt_traj_to_plot, all_pred_trajs_to_plot, save_file_path)
+            show_predictions(
+                raw_data_dict[step]['obs'],
+                raw_data_dict[step]['trgt'],
+                raw_data_dict[step]['pred'],
+                save_file_path
+            )
             
-            # 可視化しすぎないように、一定数でループを抜けます
             if step > 50:
                 print("--- Generated 50 visualization images. Exiting test loop. ---")
                 break
@@ -130,7 +127,6 @@ def test(model, loader_test, args, KSTEPS=20):
 
 
 def main(args):
-    # デバッグメッセージ: main関数が開始されたことを示します
     print("--- main function started ---")
     paths = ['./checkpoint/*social-stgcnn*']
     KSTEPS=20
@@ -139,7 +135,6 @@ def main(args):
     print('Number of samples:',KSTEPS)
     print("*"*50)
 
-    # コマンドラインから--visualizeが指定されたか確認
     if args.visualize:
         print("--- Visualization is ENABLED ---")
     else:
@@ -164,7 +159,6 @@ def main(args):
             if args.model_path != "":
                 model_path = args.model_path
 
-            # 可視化のために、現在のモデルパスをargsに保存します
             args.model_path = model_path
 
             with open(args_path,'rb') as f: 
@@ -199,7 +193,6 @@ def main(args):
             ade_ =999999
             fde_ =999999
             print("Testing ....")
-            # 変更: modelとloader_testを引数として渡します
             ad,fd,raw_data_dic_= test(model, loader_test, args, KSTEPS=KSTEPS)
             ade_= min(ade_,ad)
             fde_ =min(fde_,fd)
@@ -207,13 +200,45 @@ def main(args):
             fde_ls.append(fde_)
             print("ADE:",ade_," FDE:",fde_)
 
+            # --- ▼▼▼ ここからが追加された後処理です ▼▼▼ ---
+            if args.visualize:
+                model_name = os.path.basename(os.path.dirname(args.model_path))
+                image_folder = os.path.join("visualizations_output", model_name)
+                
+                # 1. GIFを作成
+                gif_path = f"visualizations_output/{model_name}_animation.gif"
+                create_gif(image_folder, gif_path)
+
+                # 2. PNG画像をZIPに圧縮
+                zip_path_base = os.path.join("visualizations_output", f"{model_name}_images")
+                zip_path = None
+                try:
+                    shutil.make_archive(zip_path_base, 'zip', image_folder)
+                    zip_path = f"{zip_path_base}.zip"
+                    print(f"    ✅ ZIP archive of images successfully saved to: {zip_path}")
+                except Exception as e:
+                    print(f"    ❌ FAILED to create ZIP archive. Error: {e}")
+
+                # 3. Colab環境であればダウンロードをトリガー
+                if IS_COLAB:
+                    print(f"--- Triggering downloads for {model_name}. Please check your browser. ---")
+                    try:
+                        files.download(gif_path)
+                        if zip_path:
+                            files.download(zip_path)
+                    except Exception as e:
+                        print(f"    ❌ Could not trigger automatic download. Error: {e}")
+                        print(f"    You can download the files manually from the file browser on the left.")
+                else:
+                    print(f"--- Find your generated files in the 'visualizations_output' directory. ---")
+            # --- ▲▲▲ 追加された後処理はここまで ▲▲▲ ---
+
         print("*"*50)
         print("Avg ADE:",sum(ade_ls)/len(ade_ls) if ade_ls else 0)
         print("Avg FDE:",sum(fde_ls)/len(fde_ls) if fde_ls else 0)
 
 
 if __name__ == '__main__':
-    # コマンドライン引数を設定します
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, default='',
                         help='path to the saved model')
