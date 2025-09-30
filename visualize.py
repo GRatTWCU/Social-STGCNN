@@ -1,8 +1,10 @@
 import matplotlib
-matplotlib.use('Agg')  # 追加: 非GUIバックエンドを指定
+matplotlib.use('Agg')  # 非GUIバックエンドを指定
 import matplotlib.pyplot as plt
 import os
 import numpy as np
+import imageio
+import glob
 
 def show_predictions(obs_traj, pred_traj_gt, pred_trajs_all, save_path):
     """
@@ -50,3 +52,26 @@ def show_predictions(obs_traj, pred_traj_gt, pred_trajs_all, save_path):
     except Exception as e:
         # --- エラーメッセージ ---
         print(f"    ❌ FAILED to save image. Error: {e}")
+
+def create_gif(image_folder, gif_path, duration=0.2):
+    """
+    指定されたフォルダ内のPNG画像からアニメーションGIFを作成する関数
+    """
+    print(f"--- Creating GIF from images in: {image_folder} ---")
+    try:
+        # PNGファイルを数字順に正しく並び替える
+        files = glob.glob(os.path.join(image_folder, '*.png'))
+        files.sort()
+
+        if not files:
+            print(f"    ⚠️ No images found in {image_folder}. Cannot create GIF.")
+            return
+
+        images = []
+        for filename in files:
+            images.append(imageio.imread(filename))
+        
+        imageio.mimsave(gif_path, images, duration=duration)
+        print(f"    ✅ GIF successfully saved to: {gif_path}")
+    except Exception as e:
+        print(f"    ❌ FAILED to create GIF. Error: {e}")
