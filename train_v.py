@@ -14,51 +14,13 @@ from utils import *
 from metrics import *
 from model import social_stgcnn
 import copy
-import matplotlib.pyplot as plt # ← 追加：可視化ライブラリ
+# 変更: visualize.pyから描画関数をインポートします
+from visualize import show_predictions
 
-# ← 追加：ここから可視化関数の定義
-def visualize_scene(obs_traj, pred_traj_gt, pred_traj_best, save_path):
-    """
-    軌道を可視化して画像として保存する関数
-    Args:
-    - obs_traj (np.array): 過去の軌道 (obs_len, num_peds, 2)
-    - pred_traj_gt (np.array): 正解の未来軌道 (pred_len, num_peds, 2)
-    - pred_traj_best (np.array): 最も良かった予測未来軌道 (pred_len, num_peds, 2)
-    - save_path (str): 保存先のファイルパス
-    """
-    fig, ax = plt.subplots(figsize=(10, 10))
-
-    num_peds = obs_traj.shape[1]
-
-    for i in range(num_peds):
-        # 過去の軌道を描画 (青の破線)
-        ax.plot(obs_traj[:, i, 0], obs_traj[:, i, 1], 'b--')
-        # 軌道の開始点
-        ax.plot(obs_traj[0, i, 0], obs_traj[0, i, 1], 'bo')
-
-        # 正解の未来軌道を描画 (緑の実線)
-        # 過去の最後の点から繋げる
-        full_gt_traj = np.concatenate([obs_traj[-1:, i, :], pred_traj_gt[:, i, :]])
-        ax.plot(full_gt_traj[:, 0], full_gt_traj[:, 1], 'g-', linewidth=2, label='Ground Truth' if i == 0 else "")
-
-        # 予測の未来軌道を描画 (赤の点線)
-        # 過去の最後の点から繋げる
-        full_pred_traj = np.concatenate([obs_traj[-1:, i, :], pred_traj_best[:, i, :]])
-        ax.plot(full_pred_traj[:, 0], full_pred_traj[:, 1], 'r:', linewidth=2, label='Prediction' if i == 0 else "")
-
-    ax.set_title(os.path.basename(save_path))
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.legend()
-    ax.grid(True)
-    ax.axis('equal')
-
-    plt.savefig(save_path, dpi=300)
-    plt.close(fig)
-# ← 追加：ここまで可視化関数の定義
-
-def test(args, KSTEPS=20): # ← 変更：argsを受け取る
+def test(args, KSTEPS=20):
     global loader_test, model
+    # デバッグメッセージ: test関数が開始されたことを示します
+    print("--- test function started ---")
     model.eval()
     ade_bigls = []
     fde_bigls = []
@@ -133,51 +95,55 @@ def test(args, KSTEPS=20): # ← 変更：argsを受け取る
             ade_bigls.append(min(ade_ls[n]))
             fde_bigls.append(min(fde_ls[n]))
 
-        # ← 追加：ここから可視化処理
+        # --- デバッグメッセージ: 可視化フラグの状態を確認します ---
+        print(f"--- [Scene {step}] Checking visualization flag: {args.visualize}")
+        
         if args.visualize:
-            # 20個の予測サンプルの中から、シーン全体で最もADEが良かったものを探す
-            all_samples_ade = []
-            for k in range(KSTEPS):
-                pred_k = raw_data_dict[step]['pred'][k]
-                target_gt = raw_data_dict[step]['trgt']
-                # このサンプルkのシーン全体のADEを計算
-                scene_ade = np.mean(np.linalg.norm(pred_k - target_gt, axis=2))
-                all_samples_ade.append(scene_ade)
+            # --- デバッグメッセージ: 可視化処理を開始することを示します ---
+            print(f"--- [Scene {step}] Starting visualization process...")
             
-            # 最もADEが小さかったサンプルのインデックスを取得
-            best_sample_idx = np.argmin(all_samples_ade)
-            best_pred_traj = raw_data_dict[step]['pred'][best_sample_idx]
-            
-            # 可視化関数を呼び出す
             obs_traj_to_plot = raw_data_dict[step]['obs']
             gt_traj_to_plot = raw_data_dict[step]['trgt']
+            all_pred_trajs_to_plot = raw_data_dict[step]['pred']
             
-            # 保存先フォルダの準備
-            save_dir = os.path.join(os.path.dirname(args.model_path), "visualizations")
+            # 保存先フォルダを準備します
+            model_name = os.path.basename(os.path.dirname(args.model_path))
+            save_dir = os.path.join("visualizations_output", model_name)
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
             save_file_path = os.path.join(save_dir, f"scene_{step:04d}.png")
-            visualize_scene(obs_traj_to_plot, gt_traj_to_plot, best_pred_traj, save_file_path)
             
-            # 可視化しすぎないように、一定数で終了する
+            # visualize.pyの関数を呼び出して描画します
+            show_predictions(obs_traj_to_plot, gt_traj_to_plot, all_pred_trajs_to_plot, save_file_path)
+            
+            # 可視化しすぎないように、一定数でループを抜けます
             if step > 50:
-                print("Generated 50 visualization images. Exiting test loop.")
+                print("--- Generated 50 visualization images. Exiting test loop. ---")
                 break
-        # ← 追加：ここまで可視化処理
 
     ade_ = sum(ade_bigls)/len(ade_bigls)
     fde_ = sum(fde_bigls)/len(fde_bigls)
     return ade_,fde_,raw_data_dict
 
 
-def main(args): # ← 変更：argsを受け取る
+def main(args):
+    # デバッグメッセージ: main関数が開始されたことを示します
+    print("--- main function started ---")
     paths = ['./checkpoint/*social-stgcnn*']
     KSTEPS=20
 
     print("*"*50)
     print('Number of samples:',KSTEPS)
     print("*"*50)
+
+    # コマンドラインから--visualizeが指定されたか確認
+    if args.visualize:
+        print("--- Visualization is ENABLED ---")
+    else:
+        print("--- Visualization is DISABLED ---")
+    print("*"*50)
+
 
     for feta in range(len(paths)):
         ade_ls = [] 
@@ -193,11 +159,10 @@ def main(args): # ← 変更：argsを受け取る
             model_path = exp_path+'/val_best.pth'
             args_path = exp_path+'/args.pkl'
 
-            # ← 追加：コマンドライン引数でモデルパスが指定されたら、そちらを優先
             if args.model_path != "":
                 model_path = args.model_path
 
-            # 可視化のためにargsにモデルパスを追加
+            # 可視化のために、現在のモデルパスをargsに保存します
             args.model_path = model_path
 
             with open(args_path,'rb') as f: 
@@ -207,8 +172,7 @@ def main(args): # ← 変更：argsを受け取る
             with open(stats,'rb') as f: 
                 cm = pickle.load(f)
             print("Stats:",cm)
-
-            #Data prep      
+     
             obs_seq_len = args_saved.obs_seq_len
             pred_seq_len = args_saved.pred_seq_len
             data_set = './datasets/'+args_saved.dataset+'/'
@@ -221,20 +185,19 @@ def main(args): # ← 変更：argsを受け取る
 
             loader_test = DataLoader(
                     dset_test,
-                    batch_size=1, # This is irrelative to the args batch size parameter
+                    batch_size=1,
                     shuffle =False,
                     num_workers=1)
 
-            #Defining the model 
             model = social_stgcnn(n_stgcnn =args_saved.n_stgcnn,n_txpcnn=args_saved.n_txpcnn,
             output_feat=args_saved.output_size,seq_len=args_saved.obs_seq_len,
             kernel_size=args_saved.kernel_size,pred_seq_len=args_saved.pred_seq_len).to(device)
             model.load_state_dict(torch.load(model_path, map_location=device))
 
             ade_ =999999
-            fde_ =99999fde_ =999999
+            fde_ =999999
             print("Testing ....")
-            ad,fd,raw_data_dic_= test(args, KSTEPS=KSTEPS) # ← 変更: argsを渡す
+            ad,fd,raw_data_dic_= test(args, KSTEPS=KSTEPS)
             ade_= min(ade_,ad)
             fde_ =min(fde_,fd)
             ade_ls.append(ade_)
@@ -247,7 +210,7 @@ def main(args): # ← 変更：argsを受け取る
 
 
 if __name__ == '__main__':
-    # ← 追加：argparseの設定
+    # コマンドライン引数を設定します
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, default='',
                         help='path to the saved model')
