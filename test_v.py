@@ -25,7 +25,11 @@ import copy
 # visualize.pyから2つの関数をインポートします
 from visualize import show_predictions, create_gif
 
-def test(model, loader_test, args, KSTEPS=20):
+def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
+    """
+    モデルのテストを実行する関数
+    xlim, ylim: 可視化時の座標範囲
+    """
     print("--- test function started ---")
     model.eval()
     ade_bigls = []
@@ -37,7 +41,7 @@ def test(model, loader_test, args, KSTEPS=20):
         #Get data
         batch = [tensor.to(device) for tensor in batch]
         obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,\
-         loss_mask,V_obs,A_obs,V_tr,A_tr = batch
+        loss_mask,V_obs,A_obs,V_tr,A_tr = batch
 
         num_of_objs = obs_traj_rel.shape[1]
 
@@ -51,7 +55,7 @@ def test(model, loader_test, args, KSTEPS=20):
         A_tr = A_tr.squeeze()
         V_pred = V_pred.squeeze()
         num_of_objs = obs_traj_rel.shape[1]
-        V_pred,V_tr =  V_pred[:,:num_of_objs,:],V_tr[:,:num_of_objs,:]
+        V_pred,V_tr = V_pred[:,:num_of_objs,:],V_tr[:,:num_of_objs,:]
         
         sx = torch.exp(V_pred[:,:,2]) #sx
         sy = torch.exp(V_pred[:,:,3]) #sy
@@ -110,13 +114,17 @@ def test(model, loader_test, args, KSTEPS=20):
 
             save_file_path = os.path.join(save_dir, f"scene_{step:04d}.png")
             
+            # 修正：show_predictionsにxlimとylimを渡す
             show_predictions(
                 raw_data_dict[step]['obs'],
                 raw_data_dict[step]['trgt'],
                 raw_data_dict[step]['pred'],
-                save_file_path
+                save_file_path,
+                xlim=xlim,
+                ylim=ylim
             )
             
+            # 可視化は50フレームまでで一度停止
             if step > 50:
                 print("--- Generated 50 visualization images. Exiting test loop. ---")
                 break
@@ -168,7 +176,7 @@ def main(args):
             with open(stats,'rb') as f: 
                 cm = pickle.load(f)
             print("Stats:",cm)
-     
+    
             obs_seq_len = args_saved.obs_seq_len
             pred_seq_len = args_saved.pred_seq_len
             data_set = './datasets/'+args_saved.dataset+'/'
@@ -184,6 +192,35 @@ def main(args):
                     batch_size=1,
                     shuffle =False,
                     num_workers=1)
+            
+            # --- ▼▼▼ ここからが追加された処理です ▼▼▼ ---
+            xlim = None
+            ylim = None
+            if args.visualize:
+                # データセット全体の座標範囲を計算
+                print("Calculating dataset bounds for consistent visualization...")
+                all_obs_traj_list = []
+                all_pred_traj_gt_list = []
+                # DataLoaderをループして全データを集める
+                for batch_data in loader_test:
+                    obs_traj, pred_traj_gt, _, _, _, _, _, _, _, _ = batch_data
+                    all_obs_traj_list.append(obs_traj)
+                    all_pred_traj_gt_list.append(pred_traj_gt)
+                
+                # バッチの次元で連結
+                all_obs_traj = torch.cat(all_obs_traj_list, dim=1).squeeze(0) # [seq, peds, xy]
+                all_pred_traj_gt = torch.cat(all_pred_traj_gt_list, dim=1).squeeze(0) # [seq, peds, xy]
+
+                # 観測と真値の両方の軌道データを結合
+                full_traj = torch.cat([all_obs_traj, all_pred_traj_gt], dim=0)
+
+                # 少し余白(padding)を持たせる
+                padding = 2.0 
+                xlim = (full_traj[:, :, 0].min().item() - padding, full_traj[:, :, 0].max().item() + padding)
+                ylim = (full_traj[:, :, 1].min().item() - padding, full_traj[:, :, 1].max().item() + padding)
+                print(f"Determined visualization bounds: xlim={xlim}, ylim={ylim}")
+            # --- ▲▲▲ 追加された処理はここまで ▲▲▲ ---
+
 
             model = social_stgcnn(n_stgcnn =args_saved.n_stgcnn,n_txpcnn=args_saved.n_txpcnn,
             output_feat=args_saved.output_size,seq_len=args_saved.obs_seq_len,
@@ -193,7 +230,8 @@ def main(args):
             ade_ =999999
             fde_ =999999
             print("Testing ....")
-            ad,fd,raw_data_dic_= test(model, loader_test, args, KSTEPS=KSTEPS)
+            # 修正：test関数にxlimとylimを渡す
+            ad,fd,raw_data_dic_= test(model, loader_test, args, xlim=xlim, ylim=ylim, KSTEPS=KSTEPS)
             ade_= min(ade_,ad)
             fde_ =min(fde_,fd)
             ade_ls.append(ade_)
@@ -215,9 +253,9 @@ def main(args):
                 try:
                     shutil.make_archive(zip_path_base, 'zip', image_folder)
                     zip_path = f"{zip_path_base}.zip"
-                    print(f"    ✅ ZIP archive of images successfully saved to: {zip_path}")
+                    print(f"      ✅ ZIP archive of images successfully saved to: {zip_path}")
                 except Exception as e:
-                    print(f"    ❌ FAILED to create ZIP archive. Error: {e}")
+                    print(f"      ❌ FAILED to create ZIP archive. Error: {e}")
 
                 # 3. Colab環境であればダウンロードをトリガー
                 if IS_COLAB:
@@ -227,15 +265,15 @@ def main(args):
                         if zip_path:
                             files.download(zip_path)
                     except Exception as e:
-                        print(f"    ❌ Could not trigger automatic download. Error: {e}")
-                        print(f"    You can download the files manually from the file browser on the left.")
+                        print(f"      ❌ Could not trigger automatic download. Error: {e}")
+                        print(f"      You can download the files manually from the file browser on the left.")
                 else:
                     print(f"--- Find your generated files in the 'visualizations_output' directory. ---")
             # --- ▲▲▲ 追加された後処理はここまで ▲▲▲ ---
 
-        print("*"*50)
-        print("Avg ADE:",sum(ade_ls)/len(ade_ls) if ade_ls else 0)
-        print("Avg FDE:",sum(fde_ls)/len(fde_ls) if fde_ls else 0)
+    print("*"*50)
+    print("Avg ADE:",sum(ade_ls)/len(ade_ls) if ade_ls else 0)
+    print("Avg FDE:",sum(fde_ls)/len(fde_ls) if fde_ls else 0)
 
 
 if __name__ == '__main__':
