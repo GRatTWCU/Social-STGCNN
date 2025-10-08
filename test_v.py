@@ -114,7 +114,6 @@ def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
 
             save_file_path = os.path.join(save_dir, f"scene_{step:04d}.png")
             
-            # 修正：show_predictionsにxlimとylimを渡す
             show_predictions(
                 raw_data_dict[step]['obs'],
                 raw_data_dict[step]['trgt'],
@@ -124,7 +123,6 @@ def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
                 ylim=ylim
             )
             
-            # 可視化は50フレームまでで一度停止
             if step > 50:
                 print("--- Generated 50 visualization images. Exiting test loop. ---")
                 break
@@ -193,33 +191,45 @@ def main(args):
                     shuffle =False,
                     num_workers=1)
             
-            # --- ▼▼▼ ここからが追加された処理です ▼▼▼ ---
+            # --- ▼▼▼ ここからが修正箇所です ▼▼▼ ---
             xlim = None
             ylim = None
             if args.visualize:
-                # データセット全体の座標範囲を計算
                 print("Calculating dataset bounds for consistent visualization...")
                 all_obs_traj_list = []
                 all_pred_traj_gt_list = []
-                # DataLoaderをループして全データを集める
                 for batch_data in loader_test:
                     obs_traj, pred_traj_gt, _, _, _, _, _, _, _, _ = batch_data
                     all_obs_traj_list.append(obs_traj)
                     all_pred_traj_gt_list.append(pred_traj_gt)
                 
-                # バッチの次元で連結
-                all_obs_traj = torch.cat(all_obs_traj_list, dim=1).squeeze(0) # [seq, peds, xy]
-                all_pred_traj_gt = torch.cat(all_pred_traj_gt_list, dim=1).squeeze(0) # [seq, peds, xy]
+                # DataLoaderからの出力は (batch, peds, seq, xy) の形状と仮定
+                # 歩行者の次元(dim=1)でバッチを連結
+                all_obs_traj = torch.cat(all_obs_traj_list, dim=1).squeeze(0)
+                all_pred_traj_gt = torch.cat(all_pred_traj_gt_list, dim=1).squeeze(0)
+                
+                # 観測データ(例: shape(P, 8, 2))と予測データ(例: shape(P, 12, 2))の
+                # 形状が異なるため、単純にtorch.catできない問題を修正します。
+                # それぞれを座標リストに変形してから結合し、全体の最大/最小を求めます。
 
-                # 観測と真値の両方の軌道データを結合
-                full_traj = torch.cat([all_obs_traj, all_pred_traj_gt], dim=0)
+                # 観測データの座標を(N, 2)の形状に変形
+                obs_coords = all_obs_traj.reshape(-1, 2)
+                # 予測データの座標を(M, 2)の形状に変形
+                pred_coords = all_pred_traj_gt.reshape(-1, 2)
+
+                # 両方の座標リストを結合
+                full_coords = torch.cat([obs_coords, pred_coords], dim=0)
+
+                # 結合した全データからx, yの最大値と最小値を求める
+                min_vals = full_coords.min(dim=0).values
+                max_vals = full_coords.max(dim=0).values
 
                 # 少し余白(padding)を持たせる
                 padding = 2.0 
-                xlim = (full_traj[:, :, 0].min().item() - padding, full_traj[:, :, 0].max().item() + padding)
-                ylim = (full_traj[:, :, 1].min().item() - padding, full_traj[:, :, 1].max().item() + padding)
+                xlim = (min_vals[0].item() - padding, max_vals[0].item() + padding)
+                ylim = (min_vals[1].item() - padding, max_vals[1].item() + padding)
                 print(f"Determined visualization bounds: xlim={xlim}, ylim={ylim}")
-            # --- ▲▲▲ 追加された処理はここまで ▲▲▲ ---
+            # --- ▲▲▲ 修正箇所はここまで ▲▲▲ ---
 
 
             model = social_stgcnn(n_stgcnn =args_saved.n_stgcnn,n_txpcnn=args_saved.n_txpcnn,
@@ -230,7 +240,6 @@ def main(args):
             ade_ =999999
             fde_ =999999
             print("Testing ....")
-            # 修正：test関数にxlimとylimを渡す
             ad,fd,raw_data_dic_= test(model, loader_test, args, xlim=xlim, ylim=ylim, KSTEPS=KSTEPS)
             ade_= min(ade_,ad)
             fde_ =min(fde_,fd)
@@ -238,16 +247,13 @@ def main(args):
             fde_ls.append(fde_)
             print("ADE:",ade_," FDE:",fde_)
 
-            # --- ▼▼▼ ここからが追加された後処理です ▼▼▼ ---
             if args.visualize:
                 model_name = os.path.basename(os.path.dirname(args.model_path))
                 image_folder = os.path.join("visualizations_output", model_name)
                 
-                # 1. GIFを作成
                 gif_path = f"visualizations_output/{model_name}_animation.gif"
                 create_gif(image_folder, gif_path)
 
-                # 2. PNG画像をZIPに圧縮
                 zip_path_base = os.path.join("visualizations_output", f"{model_name}_images")
                 zip_path = None
                 try:
@@ -257,7 +263,6 @@ def main(args):
                 except Exception as e:
                     print(f"      ❌ FAILED to create ZIP archive. Error: {e}")
 
-                # 3. Colab環境であればダウンロードをトリガー
                 if IS_COLAB:
                     print(f"--- Triggering downloads for {model_name}. Please check your browser. ---")
                     try:
@@ -269,7 +274,6 @@ def main(args):
                         print(f"      You can download the files manually from the file browser on the left.")
                 else:
                     print(f"--- Find your generated files in the 'visualizations_output' directory. ---")
-            # --- ▲▲▲ 追加された後処理はここまで ▲▲▲ ---
 
     print("*"*50)
     print("Avg ADE:",sum(ade_ls)/len(ade_ls) if ade_ls else 0)
