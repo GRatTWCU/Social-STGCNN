@@ -11,6 +11,7 @@ import argparse
 import glob
 import torch.distributions.multivariate_normal as torchdist
 import shutil
+from tqdm import tqdm
 try:
     # Google Colab環境でのみインポートし、ダウンロードに使用します
     from google.colab import files
@@ -36,7 +37,8 @@ def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
     fde_bigls = []
     raw_data_dict = {}
     step = 0
-    for batch in loader_test:
+    # ▼▼▼ tqdmを追加してプログレスバーを表示 ▼▼▼
+    for batch in tqdm(loader_test, desc="Testing Progress"):
         step += 1
         #Get data
         batch = [tensor.to(device) for tensor in batch]
@@ -191,45 +193,33 @@ def main(args):
                     shuffle =False,
                     num_workers=1)
             
-            # --- ▼▼▼ ここからが修正箇所です ▼▼▼ ---
             xlim = None
             ylim = None
             if args.visualize:
                 print("Calculating dataset bounds for consistent visualization...")
                 all_obs_traj_list = []
                 all_pred_traj_gt_list = []
-                for batch_data in loader_test:
+                # ▼▼▼ tqdmを追加してプログレスバーを表示 ▼▼▼
+                for batch_data in tqdm(loader_test, desc="Calculating Bounds"):
                     obs_traj, pred_traj_gt, _, _, _, _, _, _, _, _ = batch_data
                     all_obs_traj_list.append(obs_traj)
                     all_pred_traj_gt_list.append(pred_traj_gt)
                 
-                # DataLoaderからの出力は (batch, peds, seq, xy) の形状と仮定
-                # 歩行者の次元(dim=1)でバッチを連結
                 all_obs_traj = torch.cat(all_obs_traj_list, dim=1).squeeze(0)
                 all_pred_traj_gt = torch.cat(all_pred_traj_gt_list, dim=1).squeeze(0)
                 
-                # 観測データ(例: shape(P, 8, 2))と予測データ(例: shape(P, 12, 2))の
-                # 形状が異なるため、単純にtorch.catできない問題を修正します。
-                # それぞれを座標リストに変形してから結合し、全体の最大/最小を求めます。
-
-                # 観測データの座標を(N, 2)の形状に変形
                 obs_coords = all_obs_traj.reshape(-1, 2)
-                # 予測データの座標を(M, 2)の形状に変形
                 pred_coords = all_pred_traj_gt.reshape(-1, 2)
 
-                # 両方の座標リストを結合
                 full_coords = torch.cat([obs_coords, pred_coords], dim=0)
 
-                # 結合した全データからx, yの最大値と最小値を求める
                 min_vals = full_coords.min(dim=0).values
                 max_vals = full_coords.max(dim=0).values
 
-                # 少し余白(padding)を持たせる
                 padding = 2.0 
                 xlim = (min_vals[0].item() - padding, max_vals[0].item() + padding)
                 ylim = (min_vals[1].item() - padding, max_vals[1].item() + padding)
                 print(f"Determined visualization bounds: xlim={xlim}, ylim={ylim}")
-            # --- ▲▲▲ 修正箇所はここまで ▲▲▲ ---
 
 
             model = social_stgcnn(n_stgcnn =args_saved.n_stgcnn,n_txpcnn=args_saved.n_txpcnn,
