@@ -164,10 +164,14 @@ def main(args):
             model_path = exp_path+'/val_best.pth'
             args_path = exp_path+'/args.pkl'
 
-            if args.model_path != "":
-                model_path = args.model_path
+            # ▼▼▼ ここからが修正箇所です ▼▼▼
+            # 以下の2行が、前のループのパス情報を使い回してしまう原因でしたので削除しました。
+            # if args.model_path != "":
+            #     model_path = args.model_path
 
+            # args.model_pathを現在のループの正しいパスで毎回更新します。
             args.model_path = model_path
+            # ▲▲▲ 修正箇所はここまで ▲▲▲
 
             with open(args_path,'rb') as f: 
                 args_saved = pickle.load(f)
