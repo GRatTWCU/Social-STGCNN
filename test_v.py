@@ -26,9 +26,10 @@ import copy
 # visualize.pyから2つの関数をインポートします
 from visualize import show_predictions, create_gif
 
-def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
+def test(model, loader_test, args, dataset_name, xlim=None, ylim=None, KSTEPS=20):
     """
     モデルのテストを実行する関数
+    dataset_name: データセット名を追加
     xlim, ylim: 可視化時の座標範囲
     """
     print("--- test function started ---")
@@ -37,7 +38,7 @@ def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
     fde_bigls = []
     raw_data_dict = {}
     step = 0
-    # ▼▼▼ tqdmを追加してプログレスバーを表示 ▼▼▼
+    
     for batch in tqdm(loader_test, desc="Testing Progress"):
         step += 1
         #Get data
@@ -109,8 +110,9 @@ def test(model, loader_test, args, xlim=None, ylim=None, KSTEPS=20):
             fde_bigls.append(min(fde_ls[n]))
 
         if args.visualize:
+            # データセット名を保存ディレクトリに含める
             model_name = os.path.basename(os.path.dirname(args.model_path))
-            save_dir = os.path.join("visualizations_output", model_name)
+            save_dir = os.path.join("visualizations_output", model_name, dataset_name)
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
@@ -164,14 +166,8 @@ def main(args):
             model_path = exp_path+'/val_best.pth'
             args_path = exp_path+'/args.pkl'
 
-            # ▼▼▼ ここからが修正箇所です ▼▼▼
-            # 以下の2行が、前のループのパス情報を使い回してしまう原因でしたので削除しました。
-            # if args.model_path != "":
-            #     model_path = args.model_path
-
-            # args.model_pathを現在のループの正しいパスで毎回更新します。
+            # モデルパスを更新
             args.model_path = model_path
-            # ▲▲▲ 修正箇所はここまで ▲▲▲
 
             with open(args_path,'rb') as f: 
                 args_saved = pickle.load(f)
@@ -183,7 +179,12 @@ def main(args):
     
             obs_seq_len = args_saved.obs_seq_len
             pred_seq_len = args_saved.pred_seq_len
-            data_set = './datasets/'+args_saved.dataset+'/'
+            
+            # データセット名を取得
+            dataset_name = args_saved.dataset
+            data_set = './datasets/'+dataset_name+'/'
+            
+            print(f"📂 Dataset: {dataset_name}")
 
             dset_test = TrajectoryDataset(
                     data_set+'test/',
@@ -203,7 +204,7 @@ def main(args):
                 print("Calculating dataset bounds for consistent visualization...")
                 all_obs_traj_list = []
                 all_pred_traj_gt_list = []
-                # ▼▼▼ tqdmを追加してプログレスバーを表示 ▼▼▼
+                
                 for batch_data in tqdm(loader_test, desc="Calculating Bounds"):
                     obs_traj, pred_traj_gt, _, _, _, _, _, _, _, _ = batch_data
                     all_obs_traj_list.append(obs_traj)
@@ -234,7 +235,8 @@ def main(args):
             ade_ =999999
             fde_ =999999
             print("Testing ....")
-            ad,fd,raw_data_dic_= test(model, loader_test, args, xlim=xlim, ylim=ylim, KSTEPS=KSTEPS)
+            # dataset_nameを渡す
+            ad,fd,raw_data_dic_= test(model, loader_test, args, dataset_name, xlim=xlim, ylim=ylim, KSTEPS=KSTEPS)
             ade_= min(ade_,ad)
             fde_ =min(fde_,fd)
             ade_ls.append(ade_)
@@ -243,12 +245,15 @@ def main(args):
 
             if args.visualize:
                 model_name = os.path.basename(os.path.dirname(args.model_path))
-                image_folder = os.path.join("visualizations_output", model_name)
+                # データセットごとのフォルダを作成
+                image_folder = os.path.join("visualizations_output", model_name, dataset_name)
                 
-                gif_path = f"visualizations_output/{model_name}_animation.gif"
+                # GIFファイル名にデータセット名を含める
+                gif_path = f"visualizations_output/{model_name}_{dataset_name}_animation.gif"
                 create_gif(image_folder, gif_path)
 
-                zip_path_base = os.path.join("visualizations_output", f"{model_name}_images")
+                # ZIPファイル名にもデータセット名を含める
+                zip_path_base = os.path.join("visualizations_output", f"{model_name}_{dataset_name}_images")
                 zip_path = None
                 try:
                     shutil.make_archive(zip_path_base, 'zip', image_folder)
@@ -258,7 +263,7 @@ def main(args):
                     print(f"      ❌ FAILED to create ZIP archive. Error: {e}")
 
                 if IS_COLAB:
-                    print(f"--- Triggering downloads for {model_name}. Please check your browser. ---")
+                    print(f"--- Triggering downloads for {model_name} - {dataset_name}. Please check your browser. ---")
                     try:
                         files.download(gif_path)
                         if zip_path:
