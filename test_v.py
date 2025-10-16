@@ -84,6 +84,7 @@ def test(model, loader_test, args, dataset_name, xlim=None, ylim=None, KSTEPS=20
         raw_data_dict[step] = {}
         raw_data_dict[step]['obs'] = copy.deepcopy(V_x_rel_to_abs)
         raw_data_dict[step]['trgt'] = copy.deepcopy(V_y_rel_to_abs)
+        # ★★★ 予測値を格納するリストを初期化 ★★★
         raw_data_dict[step]['pred'] = []
 
         ade_ls = {}
@@ -92,12 +93,21 @@ def test(model, loader_test, args, dataset_name, xlim=None, ylim=None, KSTEPS=20
             ade_ls[n]=[]
             fde_ls[n]=[]
 
+        # ★★★ KSTEPSの数だけ予測軌跡をサンプリング ★★★
         for k in range(KSTEPS):
+            # 多変量正規分布からサンプリング
             V_pred_sample = mvnormal.sample()
-            V_pred_rel_to_abs = nodes_rel_to_nodes_abs(V_pred_sample.data.cpu().numpy().squeeze().copy(),
-                                                     V_x[-1,:,:].copy())
+            
+            # 相対座標から絶対座標に変換
+            V_pred_rel_to_abs = nodes_rel_to_nodes_abs(
+                V_pred_sample.data.cpu().numpy().squeeze().copy(),
+                V_x[-1,:,:].copy()
+            )
+            
+            # ★★★ 予測値をリストに追加（これが赤い線として描画される） ★★★
             raw_data_dict[step]['pred'].append(copy.deepcopy(V_pred_rel_to_abs))
             
+            # 各歩行者のADE/FDEを計算
             for n in range(num_of_objs):
                 pred = [V_pred_rel_to_abs[:,n:n+1,:]]
                 target = [V_y_rel_to_abs[:,n:n+1,:]]
@@ -118,10 +128,11 @@ def test(model, loader_test, args, dataset_name, xlim=None, ylim=None, KSTEPS=20
 
             save_file_path = os.path.join(save_dir, f"scene_{step:04d}.png")
             
+            # ★★★ ここで予測値リストを渡して赤い線を描画 ★★★
             show_predictions(
-                raw_data_dict[step]['obs'],
-                raw_data_dict[step]['trgt'],
-                raw_data_dict[step]['pred'],
+                raw_data_dict[step]['obs'],      # 観測軌跡（青/オレンジ）
+                raw_data_dict[step]['trgt'],     # 正解軌跡（緑）
+                raw_data_dict[step]['pred'],     # ★予測軌跡リスト（赤）★
                 save_file_path,
                 xlim=xlim,
                 ylim=ylim
